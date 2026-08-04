@@ -359,6 +359,19 @@ def _render_trust_footer():
 
 # ── Topbar ─────────────────────────────────────────────────────────────────────
 
+def _navigate(page_key: str):
+    """Switch pages via st.query_params + st.rerun() instead of an <a href> link.
+
+    A raw <a href="?nav=..."> forces the browser to do a full page navigation —
+    reloading the whole Streamlit JS bundle and reconnecting the WebSocket —
+    which is what caused the blank-page flash when switching tabs. Setting
+    query params and rerunning keeps the existing session alive, so only the
+    page content changes.
+    """
+    st.query_params["nav"] = page_key
+    st.rerun()
+
+
 def _render_topbar(current_page: str):
     nav_items = [
         ("ticker",       "Stocks"),
@@ -366,32 +379,30 @@ def _render_topbar(current_page: str):
         ("pdf",          "Analysis"),
         ("compare",      "Compare"),
         ("quarterly",    "Quarterly"),
-        ("market-pulse", "Market Pulse"),
         ("news-radar",   "News Radar"),
     ]
-    nav_html = ""
-    for key, label in nav_items:
-        active = ' class="nav-active"' if current_page == key else ""
-        nav_html += f'<a href="?nav={key}"{active} target="_self">{label}</a>'
 
-    st.markdown(f"""
-    <div class="topbar">
-        <div class="topbar-left">
-            <a href="?nav=home" style="text-decoration:none;" target="_self">
-                <div class="topbar-logo">
-                    <span class="logo-dot"></span>
-                    Equity<span>IQ</span>
-                </div>
-            </a>
-            <div class="topbar-nav">
-                {nav_html}
-            </div>
-        </div>
-        <div class="topbar-right">
-            <a class="topbar-cta" href="?nav=ticker" target="_self">Get Started</a>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+    with st.container(key="topbar"):
+        logo_col, nav_col, cta_col = st.columns([2.2, 6, 1.3], vertical_alignment="center")
+
+        with logo_col:
+            with st.container(key="topbar_logo"):
+                if st.button("🟢 EquityIQ", key="nav_home", type="tertiary"):
+                    _navigate("home")
+
+        with nav_col:
+            with st.container(key="topbar_nav"):
+                nav_cols = st.columns(len(nav_items))
+                for col, (nav_key, nav_label) in zip(nav_cols, nav_items):
+                    with col:
+                        btn_type = "primary" if current_page == nav_key else "tertiary"
+                        if st.button(nav_label, key=f"nav_{nav_key}", type=btn_type, use_container_width=True):
+                            _navigate(nav_key)
+
+        with cta_col:
+            with st.container(key="topbar_cta"):
+                if st.button("Get Started", key="nav_cta", type="primary", use_container_width=True):
+                    _navigate("ticker")
 
 
 # ── Live market ticker strip ───────────────────────────────────────────────────
@@ -449,9 +460,11 @@ def render_home_page(api_key):
     <div class="hero-section">
         <div class="hero-title">Grow your wealth with<br><span class="accent">AI-powered</span> insights</div>
         <div class="hero-sub">Upload reports, analyze stocks, compare tickers, and track market sentiment — all in one platform.</div>
-        <a class="hero-cta" href="?nav=ticker" target="_self">Get started</a>
     </div>
     """, unsafe_allow_html=True)
+    with st.container(key="hero_cta"):
+        if st.button("Get started", key="hero_cta_btn", type="primary"):
+            _navigate("ticker")
 
     st.markdown("""
     <div class="features-row">
@@ -960,87 +973,87 @@ def render_quarterly_page(api_key):
         """, unsafe_allow_html=True)
 
 
-# ── Page: Market Pulse ─────────────────────────────────────────────────────────
+def _render_general_market_scan(api_key):
+    """General, query-less market sentiment scan (formerly the standalone Market Pulse page)."""
+    analyzer = FinancialAnalyzer(api_key)
+    progress = st.progress(0)
+    status   = st.empty()
 
-def render_market_pulse_page(api_key):
-    st.markdown('<div class="page-title">Market Pulse</div>', unsafe_allow_html=True)
-    st.markdown('<div class="page-sub">AI-powered sentiment analysis of the latest financial news with stock impact predictions.</div>', unsafe_allow_html=True)
+    status.info("📡 Fetching latest market news from multiple sources...")
+    progress.progress(20)
 
-    if not api_key:
-        st.info("Add your Gemini API Key in the .env file to use Market Pulse.")
+    sentiment_results = analyzer.fetch_market_news_with_sentiment()
+    progress.progress(80)
+    status.info("🧠 Classifying sentiment and stock impact...")
+    progress.progress(100)
+    status.empty()
+    progress.empty()
+
+    if not sentiment_results:
+        st.warning("Could not fetch news at this time. Please try again in a moment.")
         return
 
-    if st.button("⚡ Scan Latest News", key="sentiment_btn"):
-        analyzer = FinancialAnalyzer(api_key)
-        progress = st.progress(0)
-        status   = st.empty()
+    st.markdown('<div class="section-head">General Market Sentiment Feed</div>', unsafe_allow_html=True)
 
-        status.info("📡 Fetching latest market news from multiple sources...")
-        progress.progress(20)
+    for item in sentiment_results:
+        sentiment    = item.get("sentiment", "mixed")
+        badge_class  = "positive" if sentiment == "positive" else ("negative" if sentiment == "negative" else "mixed")
+        badge_label  = sentiment.upper()
 
-        sentiment_results = analyzer.fetch_market_news_with_sentiment()
-        progress.progress(80)
-        status.info("🧠 Classifying sentiment and stock impact...")
-        progress.progress(100)
-        status.empty()
-        progress.empty()
+        bullish_tags = "".join(
+            f'<span class="stock-tag bullish">▲ {s}</span>'
+            for s in item.get("bullish_stocks", [])
+        )
+        bearish_tags = "".join(
+            f'<span class="stock-tag bearish">▼ {s}</span>'
+            for s in item.get("bearish_stocks", [])
+        )
 
-        if not sentiment_results:
-            st.warning("Could not fetch news at this time. Please try again in a moment.")
-        else:
-            st.markdown('<div class="section-head">Market Sentiment Feed</div>', unsafe_allow_html=True)
+        link_html   = (
+            f' · <a href="{item["link"]}" target="_blank" style="color:#00b386;font-size:0.72rem;text-decoration:none;">Read article →</a>'
+            if item.get("link") and item["link"] != "#" else ""
+        )
+        source_html = f'{item["publisher"]}{link_html}' if item.get("publisher") else ""
 
-            for item in sentiment_results:
-                sentiment    = item.get("sentiment", "mixed")
-                badge_class  = "positive" if sentiment == "positive" else ("negative" if sentiment == "negative" else "mixed")
-                badge_label  = sentiment.upper()
-
-                bullish_tags = "".join(
-                    f'<span class="stock-tag bullish">▲ {s}</span>'
-                    for s in item.get("bullish_stocks", [])
-                )
-                bearish_tags = "".join(
-                    f'<span class="stock-tag bearish">▼ {s}</span>'
-                    for s in item.get("bearish_stocks", [])
-                )
-
-                link_html   = (
-                    f' · <a href="{item["link"]}" target="_blank" style="color:#00b386;font-size:0.72rem;text-decoration:none;">Read article →</a>'
-                    if item.get("link") and item["link"] != "#" else ""
-                )
-                source_html = f'{item["publisher"]}{link_html}' if item.get("publisher") else ""
-
-                st.markdown(f"""
-                <div class="sentiment-card">
-                    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
-                        <span class="sentiment-badge {badge_class}">{badge_label}</span>
-                        <span class="sentiment-source">{item.get("published", "")}</span>
-                    </div>
-                    <div class="sentiment-headline">{item["headline"]}</div>
-                    <div class="sentiment-source">{source_html}</div>
-                    <div class="sentiment-stocks">{bullish_tags}{bearish_tags}</div>
-                    <div class="sentiment-reason">{item.get("reason", "")}</div>
-                </div>
-                """, unsafe_allow_html=True)
-
-            st.markdown("""
-            <div class="trust-footer">
-                <div class="trust-badges">
-                    <div class="trust-badge"><span class="badge-icon">🌐</span> Real-time news</div>
-                    <div class="trust-badge"><span class="badge-icon">📊</span> Sentiment Analysis</div>
-                </div>
-                <div class="trust-legal">
-                    Sentiment predictions are AI-generated and for informational purposes only. Not financial advice.
-                </div>
+        st.markdown(f"""
+        <div class="sentiment-card">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+                <span class="sentiment-badge {badge_class}">{badge_label}</span>
+                <span class="sentiment-source">{item.get("published", "")}</span>
             </div>
-            """, unsafe_allow_html=True)
+            <div class="sentiment-headline">{item["headline"]}</div>
+            <div class="sentiment-source">{source_html}</div>
+            <div class="sentiment-stocks">{bullish_tags}{bearish_tags}</div>
+            <div class="sentiment-reason">{item.get("reason", "")}</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    st.markdown("""
+    <div class="trust-footer">
+        <div class="trust-badges">
+            <div class="trust-badge"><span class="badge-icon">🌐</span> Real-time news</div>
+            <div class="trust-badge"><span class="badge-icon">📊</span> Sentiment Analysis</div>
+        </div>
+        <div class="trust-legal">
+            Sentiment predictions are AI-generated and for informational purposes only. Not financial advice.
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
 
-# ── Page: News Radar ───────────────────────────────────────────────────────────
+# ── Page: News Radar (also covers general market sentiment, formerly "Market Pulse") ──
 
 def render_news_radar_page(api_key):
     st.markdown('<div class="page-title">News Radar</div>', unsafe_allow_html=True)
-    st.markdown('<div class="page-sub">AI-powered global news intelligence — sentiment, impact analysis &amp; affected-stock detection.</div>', unsafe_allow_html=True)
+    st.markdown('<div class="page-sub">AI-powered news intelligence — scan the general market or search a specific ticker/sector for sentiment, impact analysis &amp; affected-stock detection.</div>', unsafe_allow_html=True)
+
+    if not api_key:
+        st.info("Add your Gemini API Key in the .env file to use News Radar.")
+        return
+
+    scan_btn = st.button("⚡ Scan General Market News", key="sentiment_btn")
+
+    st.markdown('<div class="section-head" style="margin-top:20px;">Or Search a Ticker / Sector</div>', unsafe_allow_html=True)
 
     nr_c1, nr_c2, nr_c3 = st.columns([4, 2, 1])
     with nr_c1:
@@ -1078,9 +1091,8 @@ def render_news_radar_page(api_key):
     </div>
     """, unsafe_allow_html=True)
 
-    if not api_key:
-        st.info("Add your Gemini API Key in the .env file to use News Radar.")
-        return
+    if scan_btn:
+        _render_general_market_scan(api_key)
 
     if nr_search_btn and nr_query.strip():
         query_clean     = nr_query.strip().upper() if nr_type == "Ticker" else nr_query.strip()
@@ -1590,9 +1602,7 @@ def main():
         render_compare_page(api_key)
     elif page == "quarterly":
         render_quarterly_page(api_key)
-    elif page == "market-pulse":
-        render_market_pulse_page(api_key)
-    elif page == "news-radar":
+    elif page in ("news-radar", "market-pulse"):
         render_news_radar_page(api_key)
     else:
         render_home_page(api_key)

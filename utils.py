@@ -43,91 +43,62 @@ def setup_page():
             color: #44475b !important;
         }
 
-        /* === TOPBAR === */
-        .topbar {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 14px 0;
+        /* === TOPBAR (built from st.button widgets — real Streamlit reruns instead
+               of full-page <a href> navigation, so switching tabs no longer causes
+               a full browser reload / blank-page flash) === */
+        .st-key-topbar {
             border-bottom: 1px solid #e8e8eb;
+            padding: 6px 0 2px;
             margin-bottom: 0;
         }
-        .topbar-left {
-            display: flex;
-            align-items: center;
-            gap: 36px;
-        }
-        .topbar-logo {
-            font-size: 1.45rem;
-            font-weight: 800;
-            color: #44475b;
-            letter-spacing: -0.5px;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-        .topbar-logo .logo-dot {
-            width: 28px; height: 28px;
-            background: #00d09c;
-            border-radius: 50%;
-            display: inline-block;
-        }
-        .topbar-logo span { color: #00d09c; }
-        .topbar-nav {
-            display: flex;
-            gap: 28px;
-            align-items: center;
-        }
-        .topbar-nav a {
-            color: #44475b;
-            text-decoration: none;
-            font-size: 0.87rem;
-            font-weight: 500;
-            transition: color 0.18s;
-        }
-        .topbar-nav a:hover { color: #00d09c; }
-        .topbar-right {
-            display: flex;
-            align-items: center;
-            gap: 16px;
-        }
-        .topbar-search {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            background: #f5f5f6;
-            border: 1px solid #e8e8eb;
-            border-radius: 8px;
-            padding: 8px 16px;
-            font-size: 0.82rem;
-            color: #a0a2ab;
-            min-width: 200px;
-        }
-        .topbar-search kbd {
-            background: #e8e8eb;
-            border-radius: 4px;
-            padding: 1px 6px;
-            font-size: 0.7rem;
-            color: #7c7e8c;
-            margin-left: auto;
-        }
-        .topbar-cta {
-            background: #00d09c;
-            color: #fff !important;
-            border-radius: 8px;
-            padding: 9px 22px;
-            font-size: 0.85rem;
-            font-weight: 600;
-            text-decoration: none;
-            transition: background 0.2s;
+        .st-key-topbar div[data-testid="stVerticalBlock"] { gap: 0 !important; }
+        .st-key-topbar div[data-testid="stHorizontalBlock"] { align-items: center; gap: 8px; }
+        .st-key-topbar div[data-testid="stElementContainer"] { margin: 0 !important; }
+        /* Selectors use ".stButton > button" (not just "button") so specificity beats
+           the global ".stButton > button" pill-button rule below, regardless of source order. */
+        .st-key-topbar .stButton > button {
+            border: none !important;
+            background: transparent !important;
+            box-shadow: none !important;
+            padding: 6px 4px !important;
             white-space: nowrap;
         }
-        .topbar-cta:hover { background: #00b386; }
-        .topbar-nav a.nav-active {
-            color: #00d09c !important;
-            border-bottom: 2px solid #00d09c;
-            padding-bottom: 2px;
+
+        /* Brand / logo button */
+        .st-key-topbar_logo .stButton > button {
+            font-size: 1.2rem !important;
+            font-weight: 800 !important;
+            color: #44475b !important;
+            letter-spacing: -0.5px;
+            justify-content: flex-start !important;
         }
+
+        /* Nav item buttons */
+        .st-key-topbar_nav .stButton > button {
+            color: #44475b !important;
+            font-size: 0.87rem !important;
+            font-weight: 500 !important;
+            transition: color 0.18s;
+            justify-content: center !important;
+        }
+        .st-key-topbar_nav .stButton > button:hover { color: #00d09c !important; }
+        .st-key-topbar_nav .stButton > button[kind="primary"] {
+            color: #00d09c !important;
+            border-bottom: 2px solid #00d09c !important;
+            border-radius: 0 !important;
+        }
+
+        /* "Get Started" CTA pill (top-right) */
+        .st-key-topbar_cta .stButton > button {
+            background: #00d09c !important;
+            color: #fff !important;
+            border-radius: 8px !important;
+            padding: 9px 22px !important;
+            font-size: 0.85rem !important;
+            font-weight: 600 !important;
+            transition: background 0.2s;
+        }
+        .st-key-topbar_cta .stButton > button:hover { background: #00b386 !important; color: #fff !important; }
 
         /* === PAGE HEADERS === */
         .page-title {
@@ -193,18 +164,22 @@ def setup_page():
             margin-right: auto;
             line-height: 1.6;
         }
-        .hero-cta {
-            display: inline-block;
-            background: #00d09c;
-            color: #fff;
-            border-radius: 8px;
-            padding: 12px 32px;
-            font-size: 0.92rem;
-            font-weight: 600;
-            text-decoration: none;
+        .st-key-hero_cta { display: flex; justify-content: center; margin-bottom: 8px; }
+        .st-key-hero_cta .stButton > button {
+            background: #00d09c !important;
+            color: #fff !important;
+            border: none !important;
+            border-radius: 8px !important;
+            padding: 12px 32px !important;
+            font-size: 0.92rem !important;
+            font-weight: 600 !important;
             transition: all 0.2s;
         }
-        .hero-cta:hover { background: #00b386; box-shadow: 0 4px 14px rgba(0,208,156,0.25); }
+        .st-key-hero_cta .stButton > button:hover {
+            background: #00b386 !important;
+            color: #fff !important;
+            box-shadow: 0 4px 14px rgba(0,208,156,0.25);
+        }
 
         /* === FEATURE CARDS === */
         .features-row {

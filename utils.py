@@ -917,7 +917,17 @@ def setup_page():
     """, unsafe_allow_html=True)
 
 
-def format_number(num):
+CURRENCY_SYMBOLS = {
+    "USD": "$", "INR": "₹", "EUR": "€", "GBP": "£", "JPY": "¥",
+}
+
+
+def currency_symbol(code):
+    """Maps a currency code (e.g. from yfinance/AI extraction) to its display symbol."""
+    return CURRENCY_SYMBOLS.get((code or "USD").upper(), "$")
+
+
+def format_number(num, symbol="$"):
     """Formats large numbers into readable strings."""
     if num is None:
         return "N/A"
@@ -926,14 +936,14 @@ def format_number(num):
     except (ValueError, TypeError):
         return str(num)
     if abs(num) >= 1e12:
-        return f"${num / 1e12:.2f}T"
+        return f"{symbol}{num / 1e12:.2f}T"
     if abs(num) >= 1e9:
-        return f"${num / 1e9:.2f}B"
+        return f"{symbol}{num / 1e9:.2f}B"
     if abs(num) >= 1e6:
-        return f"${num / 1e6:.2f}M"
+        return f"{symbol}{num / 1e6:.2f}M"
     if abs(num) >= 1e3:
-        return f"${num / 1e3:.1f}K"
-    return f"${num:.2f}"
+        return f"{symbol}{num / 1e3:.1f}K"
+    return f"{symbol}{num:.2f}"
 
 
 def create_metric_card(label, value, delta=None):

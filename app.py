@@ -11,7 +11,7 @@ from screener import (
     get_upcoming_dividends,
 )
 from utils import (
-    setup_page, format_number,
+    setup_page, format_number, currency_symbol,
     create_metric_card, create_valuation_card, create_info_card
 )
 
@@ -112,6 +112,7 @@ def display_results(metrics, valuation, analyzer, api_key=""):
     company  = metrics.get("Company Name", "Unknown")
     fy       = metrics.get("Fiscal Year", "N/A")
     currency = metrics.get("Currency", "USD")
+    sym      = currency_symbol(currency)
     ticker   = metrics.get("Ticker", "")
 
     st.markdown(f"""
@@ -125,14 +126,14 @@ def display_results(metrics, valuation, analyzer, api_key=""):
     st.markdown('<div class="section-head">Key Financials</div>', unsafe_allow_html=True)
     c1, c2, c3, c4 = st.columns(4)
     with c1:
-        create_metric_card("Revenue", format_number(metrics.get("Revenue")))
+        create_metric_card("Revenue", format_number(metrics.get("Revenue"), sym))
     with c2:
-        create_metric_card("Net Income", format_number(metrics.get("Net Income")))
+        create_metric_card("Net Income", format_number(metrics.get("Net Income"), sym))
     with c3:
         eps_val = metrics.get("EPS")
-        create_metric_card("EPS", f"${eps_val}" if eps_val is not None else "N/A")
+        create_metric_card("EPS", f"{sym}{eps_val}" if eps_val is not None else "N/A")
     with c4:
-        create_metric_card("Free Cash Flow", format_number(metrics.get("Free Cash Flow")))
+        create_metric_card("Free Cash Flow", format_number(metrics.get("Free Cash Flow"), sym))
 
     # Financial Ratio Dashboard
     ratio_defs = [
@@ -195,7 +196,7 @@ def display_results(metrics, valuation, analyzer, api_key=""):
         dcf    = valuation.get("DCF Value", 0)
         growth = valuation.get("Assumptions", {}).get("Growth Rate", "5.0%")
         create_valuation_card(
-            "DCF Model", f"${dcf:,.2f}",
+            "DCF Model", f"{sym}{dcf:,.2f}",
             f"5-year projection · {growth} growth · 10% discount",
             tooltip="Discounted Cash Flow (DCF) estimates a company's value by projecting its future cash flows and discounting them back to today's value using a required rate of return."
         )
@@ -203,8 +204,8 @@ def display_results(metrics, valuation, analyzer, api_key=""):
         graham = valuation.get("Graham Number", 0)
         bvps   = valuation.get("Book Value Per Share", 0)
         create_valuation_card(
-            "Graham Number", f"${graham:,.2f}",
-            f"BVPS: ${bvps:,.2f} · Conservative estimate",
+            "Graham Number", f"{sym}{graham:,.2f}",
+            f"BVPS: {sym}{bvps:,.2f} · Conservative estimate",
             tooltip="The Graham Number, developed by Benjamin Graham, calculates the maximum fair price for a stock using its EPS and book value per share. Formula: √(22.5 × EPS × BVPS)"
         )
 
@@ -218,7 +219,7 @@ def display_results(metrics, valuation, analyzer, api_key=""):
     fig = go.Figure(data=[go.Bar(
         x=labels, y=values,
         marker=dict(color=colors, line=dict(color='rgba(255,255,255,0.05)', width=1)),
-        hovertemplate='%{x}<br>$%{y:,.0f}<extra></extra>'
+        hovertemplate='%{x}<br>' + sym + '%{y:,.0f}<extra></extra>'
     )])
     fig.update_layout(
         template="plotly_white", paper_bgcolor='#ffffff', plot_bgcolor='#ffffff',
@@ -318,18 +319,18 @@ def display_results(metrics, valuation, analyzer, api_key=""):
                 margin = ((avg_intrinsic - current_price) / current_price) * 100
                 if margin > 15:
                     signal, signal_class, card_class, emoji = "BUY", "buy", "verdict-buy", "🟢"
-                    explanation = f"The stock appears <b>undervalued</b>. Fair value (${avg_intrinsic:,.2f}) is <b>{margin:.1f}% above</b> market price."
+                    explanation = f"The stock appears <b>undervalued</b>. Fair value ({sym}{avg_intrinsic:,.2f}) is <b>{margin:.1f}% above</b> market price."
                 elif margin < -15:
                     signal, signal_class, card_class, emoji = "SELL / AVOID", "sell", "verdict-sell", "🔴"
-                    explanation = f"The stock appears <b>overvalued</b>. Price is <b>{abs(margin):.1f}% above</b> fair value (${avg_intrinsic:,.2f})."
+                    explanation = f"The stock appears <b>overvalued</b>. Price is <b>{abs(margin):.1f}% above</b> fair value ({sym}{avg_intrinsic:,.2f})."
                 else:
                     signal, signal_class, card_class, emoji = "HOLD", "hold", "verdict-hold", "🟡"
-                    explanation = f"Trading <b>near fair value</b> (${avg_intrinsic:,.2f}). No strong signal."
+                    explanation = f"Trading <b>near fair value</b> ({sym}{avg_intrinsic:,.2f}). No strong signal."
 
                 st.markdown(f"""
                 <div class="verdict-card {card_class}">
                     <div style="font-size:0.8rem;color:#64748b;text-transform:uppercase;letter-spacing:1px;">{ticker} · Current Market Price</div>
-                    <div class="verdict-price">${current_price:,.2f}</div>
+                    <div class="verdict-price">{sym}{current_price:,.2f}</div>
                     <div class="verdict-signal {signal_class}">{emoji} {signal}</div>
                     <div class="verdict-explain">{explanation}</div>
                     <div style="margin-top:14px;font-size:0.75rem;color:#94a3b8;">⚠️ Not financial advice. Always do your own research.</div>
@@ -367,7 +368,6 @@ def _render_topbar(current_page: str):
         ("quarterly",    "Quarterly"),
         ("market-pulse", "Market Pulse"),
         ("news-radar",   "News Radar"),
-        ("watchlist",    "Watchlist"),
     ]
     nav_html = ""
     for key, label in nav_items:
@@ -665,6 +665,7 @@ def render_compare_page(api_key):
                     rows = []
                     for d in all_data:
                         m, v, p = d["metrics"], d["valuation"], d["price"]
+                        sym      = currency_symbol(m.get("Currency", "USD"))
                         dcf_v    = safe_num(v.get("DCF Value"))
                         graham_v = safe_num(v.get("Graham Number"))
                         avg_fair = 0
@@ -686,12 +687,12 @@ def render_compare_page(api_key):
                         rows.append({
                             "Ticker":     d["ticker"],
                             "Company":    m.get("Company Name", "—"),
-                            "Price":      f"${p:,.2f}" if p else "N/A",
-                            "Revenue":    format_number(m.get("Revenue")),
-                            "Net Income": format_number(m.get("Net Income")),
-                            "EPS":        f"${safe_num(m.get('EPS')):.2f}",
-                            "DCF Value":  f"${dcf_v:,.2f}",
-                            "Graham #":   f"${graham_v:,.2f}",
+                            "Price":      f"{sym}{p:,.2f}" if p else "N/A",
+                            "Revenue":    format_number(m.get("Revenue"), sym),
+                            "Net Income": format_number(m.get("Net Income"), sym),
+                            "EPS":        f"{sym}{safe_num(m.get('EPS')):.2f}",
+                            "DCF Value":  f"{sym}{dcf_v:,.2f}",
+                            "Graham #":   f"{sym}{graham_v:,.2f}",
                             "Upside":     f"{upside:+.1f}%",
                             "Verdict":    verdict,
                         })
@@ -706,14 +707,15 @@ def render_compare_page(api_key):
 
                     fig = go.Figure()
                     for i, d in enumerate(all_data):
-                        m    = d["metrics"]
+                        m         = d["metrics"]
+                        trace_sym = currency_symbol(m.get("Currency", "USD"))
                         vals = [safe_num(m.get(k)) for k in compare_keys]
                         fig.add_trace(go.Bar(
                             name=d["ticker"],
                             x=["Revenue", "Net Income", "FCF", "Assets"],
                             y=vals,
                             marker_color=bar_colors[i % len(bar_colors)],
-                            hovertemplate='%{x}<br>$%{y:,.0f}<extra>' + d["ticker"] + '</extra>'
+                            hovertemplate='%{x}<br>' + trace_sym + '%{y:,.0f}<extra>' + d["ticker"] + '</extra>'
                         ))
 
                     fig.update_layout(
@@ -733,6 +735,7 @@ def render_compare_page(api_key):
                     for i, d in enumerate(all_data):
                         with verdict_cols[i]:
                             v, p     = d["valuation"], d["price"]
+                            card_sym = currency_symbol(d["metrics"].get("Currency", "USD"))
                             dcf_v    = safe_num(v.get("DCF Value"))
                             graham_v = safe_num(v.get("Graham Number"))
                             avg_fair = 0
@@ -753,8 +756,8 @@ def render_compare_page(api_key):
                                     card_cls, sig = "verdict-sell", "🔴 SELL"
                                 else:
                                     card_cls, sig = "verdict-hold", "🟡 HOLD"
-                                price_str = f"${p:,.2f}"
-                                fair_str  = f"Fair Value: ${avg_fair:,.2f}"
+                                price_str = f"{card_sym}{p:,.2f}"
+                                fair_str  = f"Fair Value: {card_sym}{avg_fair:,.2f}"
                             else:
                                 card_cls, sig = "verdict-hold", "⚪ N/A"
                                 price_str, fair_str = "N/A", "Insufficient data"
@@ -829,6 +832,7 @@ def render_quarterly_page(api_key):
                     growth_data   = result["growth"]
                     pros_cons     = result["pros_cons"]
                     company_name  = result["company_name"]
+                    q_sym         = currency_symbol(quarters_data[0].get("Currency", "USD")) if quarters_data else "$"
 
                     if result.get("errors"):
                         for e in result["errors"]:
@@ -848,12 +852,12 @@ def render_quarterly_page(api_key):
                     for q in quarters_data:
                         table_rows.append({
                             "Quarter":          q.get("Quarter Label", "—"),
-                            "Revenue":          format_number(q.get("Revenue")),
-                            "Net Income":       format_number(q.get("Net Income")),
-                            "EPS":              f"${safe_num(q.get('EPS')):.2f}",
-                            "Free Cash Flow":   format_number(q.get("Free Cash Flow")),
-                            "Total Assets":     format_number(q.get("Total Assets")),
-                            "Total Liabilities": format_number(q.get("Total Liabilities")),
+                            "Revenue":          format_number(q.get("Revenue"), q_sym),
+                            "Net Income":       format_number(q.get("Net Income"), q_sym),
+                            "EPS":              f"{q_sym}{safe_num(q.get('EPS')):.2f}",
+                            "Free Cash Flow":   format_number(q.get("Free Cash Flow"), q_sym),
+                            "Total Assets":     format_number(q.get("Total Assets"), q_sym),
+                            "Total Liabilities": format_number(q.get("Total Liabilities"), q_sym),
                         })
                     df_q = pd.DataFrame(table_rows)
                     st.dataframe(df_q, use_container_width=True, hide_index=True)
@@ -873,13 +877,13 @@ def render_quarterly_page(api_key):
                             name=display_label,
                             line=dict(color=trend_colors[idx], width=3),
                             marker=dict(size=8),
-                            hovertemplate=f'{display_label}<br>%{{x}}: $%{{y:,.0f}}<extra></extra>'
+                            hovertemplate=f'{display_label}<br>%{{x}}: {q_sym}%{{y:,.0f}}<extra></extra>'
                         ))
                     fig_trend.update_layout(
                         template="plotly_white", paper_bgcolor='#ffffff', plot_bgcolor='#ffffff',
                         font=dict(family="Inter", size=13, color="#44475b"),
                         xaxis=dict(gridcolor='#f0f0f2', title="Quarter"),
-                        yaxis=dict(gridcolor='#f0f0f2', title="Value ($)"),
+                        yaxis=dict(gridcolor='#f0f0f2', title=f"Value ({q_sym})"),
                         margin=dict(l=20, r=20, t=20, b=40), height=400,
                         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5, font=dict(color='#44475b')),
                         hovermode="x unified"
@@ -1030,168 +1034,6 @@ def render_market_pulse_page(api_key):
                 </div>
             </div>
             """, unsafe_allow_html=True)
-
-
-# ── Page: Watchlist ────────────────────────────────────────────────────────────
-
-def render_watchlist_page(api_key):
-    st.markdown('<div class="page-title">Watchlist & Alerts</div>', unsafe_allow_html=True)
-    st.markdown('<div class="page-sub">Track stocks and get price alerts when they hit your target.</div>', unsafe_allow_html=True)
-
-    if "watchlist" not in st.session_state:
-        st.session_state.watchlist = []
-
-    st.markdown('<div class="section-head">Add to Watchlist</div>', unsafe_allow_html=True)
-    wl_c1, wl_c2, wl_c3, wl_c4 = st.columns([3, 2, 3, 1])
-    with wl_c1:
-        wl_ticker_in  = st.text_input("Ticker", placeholder="e.g. AAPL, TCS.NS", key="wl_ticker_input", label_visibility="collapsed")
-    with wl_c2:
-        wl_alert_price = st.number_input("Alert below ($)", min_value=0.0, value=0.0, step=0.5, key="wl_alert_input", label_visibility="collapsed")
-    with wl_c3:
-        wl_note = st.text_input("Note (optional)", placeholder="Why watching this stock?", key="wl_note_input", label_visibility="collapsed")
-    with wl_c4:
-        st.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
-        if st.button("➕ Add", key="wl_add_btn"):
-            if wl_ticker_in.strip():
-                ticker_up = wl_ticker_in.strip().upper()
-                existing  = [w["ticker"] for w in st.session_state.watchlist]
-                if ticker_up in existing:
-                    st.warning(f"{ticker_up} is already in your watchlist.")
-                else:
-                    st.session_state.watchlist.append({
-                        "ticker":        ticker_up,
-                        "alert_price":   wl_alert_price,
-                        "note":          wl_note,
-                        "current_price": None,
-                        "company":       "",
-                    })
-                    st.rerun()
-            else:
-                st.warning("Enter a ticker symbol.")
-
-    st.markdown("""
-    <div class="supported-docs">
-        Examples: <span>AAPL</span> <span>TSLA</span> <span>NVDA</span> <span>MSFT</span>
-        <span>RELIANCE.NS</span> <span>TCS.NS</span> <span>INFY.NS</span>
-    </div>
-    """, unsafe_allow_html=True)
-
-    if st.session_state.watchlist:
-        btn_c1, btn_c2, _ = st.columns([1.5, 1.5, 7])
-        with btn_c1:
-            if st.button("🔄 Refresh Prices", key="wl_refresh"):
-                try:
-                    import yfinance as yf
-                    wl_analyzer = FinancialAnalyzer(api_key if api_key else "ticker-mode")
-                except Exception:
-                    wl_analyzer = None
-                if wl_analyzer:
-                    with st.spinner("Fetching live prices..."):
-                        for item in st.session_state.watchlist:
-                            item["current_price"] = wl_analyzer.get_current_price(item["ticker"])
-                            if not item.get("company"):
-                                try:
-                                    import yfinance as yf
-                                    info = yf.Ticker(item["ticker"]).info
-                                    item["company"] = (
-                                        info.get("longName") or info.get("shortName") or item["ticker"]
-                                    )
-                                except Exception:
-                                    item["company"] = item["ticker"]
-                    st.rerun()
-        with btn_c2:
-            if st.button("🗑️ Clear All", key="wl_clear"):
-                st.session_state.watchlist = []
-                st.rerun()
-
-        alerts = [
-            w for w in st.session_state.watchlist
-            if w.get("current_price") and w.get("alert_price", 0) > 0
-            and w["current_price"] <= w["alert_price"]
-        ]
-        if alerts:
-            alert_names = " · ".join(w["ticker"] for w in alerts)
-            st.markdown(f"""
-            <div class="alert-banner">
-                🔔 <b>{len(alerts)} stock(s) hit your alert price!</b> &nbsp;{alert_names}
-            </div>
-            """, unsafe_allow_html=True)
-
-        st.markdown('<div class="section-head">Your Watchlist</div>', unsafe_allow_html=True)
-
-        for i, item in enumerate(st.session_state.watchlist):
-            ticker      = item["ticker"]
-            cur_price   = item.get("current_price")
-            alert_price = item.get("alert_price", 0)
-            company     = item.get("company") or ticker
-            note        = item.get("note", "")
-
-            if cur_price and alert_price > 0:
-                if cur_price <= alert_price:
-                    card_cls     = "wl-alert"
-                    status_icon  = "🔔"
-                    status_text  = f"ALERT — at/below ${alert_price:,.2f} target"
-                    status_color = "#16a34a"
-                else:
-                    pct          = ((cur_price - alert_price) / alert_price) * 100
-                    card_cls     = "wl-normal"
-                    status_icon  = "⚪"
-                    status_text  = f"{pct:.1f}% above alert target"
-                    status_color = "#94a3b8"
-            else:
-                card_cls     = "wl-normal"
-                status_icon  = "⚪"
-                status_text  = "Click 'Refresh Prices' to load" if not cur_price else "No alert set"
-                status_color = "#94a3b8"
-
-            price_display = f"${cur_price:,.2f}" if cur_price else "—"
-            alert_display = f"${alert_price:,.2f}" if alert_price > 0 else "—"
-            note_html     = f'<span class="wl-note">"{note}"</span>' if note else ""
-
-            card_col, rm_col = st.columns([11, 1])
-            with card_col:
-                st.markdown(f"""
-                <div class="watchlist-card {card_cls}">
-                    <div class="wl-row">
-                        <div class="wl-left">
-                            <span class="wl-ticker">{ticker}</span>
-                            <div>
-                                <span class="wl-company">{company}</span>
-                                {note_html}
-                            </div>
-                        </div>
-                        <div class="wl-right">
-                            <div class="wl-price">{price_display}</div>
-                            <div class="wl-alert-price">Alert: {alert_display}</div>
-                            <div class="wl-status" style="color:{status_color};">{status_icon} {status_text}</div>
-                        </div>
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
-            with rm_col:
-                if st.button("✕", key=f"wl_remove_{i}", help=f"Remove {ticker}"):
-                    st.session_state.watchlist.pop(i)
-                    st.rerun()
-
-    else:
-        st.markdown("""
-        <div style="text-align:center;padding:60px 0;color:#7c7e8c;">
-            <div style="font-size:2.5rem;margin-bottom:12px;">📋</div>
-            <div style="font-size:1rem;font-weight:600;color:#44475b;">Your watchlist is empty</div>
-            <div style="font-size:0.84rem;margin-top:6px;">Add tickers above and set price alerts to get notified</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-    st.markdown("""
-    <div class="trust-footer">
-        <div class="trust-badges">
-            <div class="trust-badge"><span class="badge-icon">🔒</span> Stored in session only</div>
-            <div class="trust-badge"><span class="badge-icon">🌐</span> Real-time price checks</div>
-            <div class="trust-badge"><span class="badge-icon">🔔</span> Price alert detection</div>
-        </div>
-        <div class="trust-legal">EquityIQ is for educational and informational purposes only. Not financial advice.</div>
-    </div>
-    """, unsafe_allow_html=True)
 
 
 # ── Page: News Radar ───────────────────────────────────────────────────────────
@@ -1352,16 +1194,16 @@ def _fmt(val, fmt=".2f", suffix="", scale=1, na="N/A"):
         return na
 
 
-def _mcap_label(val):
+def _mcap_label(val, sym="$"):
     if val is None:
         return "N/A"
     if val >= 1e12:
-        return f"${val/1e12:.2f}T"
+        return f"{sym}{val/1e12:.2f}T"
     if val >= 1e9:
-        return f"${val/1e9:.1f}B"
+        return f"{sym}{val/1e9:.1f}B"
     if val >= 1e6:
-        return f"${val/1e6:.0f}M"
-    return f"${val:,.0f}"
+        return f"{sym}{val/1e6:.0f}M"
+    return f"{sym}{val:,.0f}"
 
 
 def render_screener_page(_api_key):
@@ -1426,7 +1268,7 @@ def render_screener_page(_api_key):
 
     with f1:
         with st.expander("🌍 Market Filters", expanded=False):
-            mc_range = st.slider("Market Cap ($B)", 0.0, 3000.0, (0.0, 3000.0), 10.0, key="f_mc")
+            mc_range = st.slider("Market Cap (Bn, local currency)", 0.0, 3000.0, (0.0, 3000.0), 10.0, key="f_mc")
             all_sectors = sorted({d.get("sector","") for d in stocks if d.get("sector")})
             all_countries = sorted({d.get("country","") for d in stocks if d.get("country")})
             sel_sectors  = st.multiselect("Sector", all_sectors, key="f_sec")
@@ -1597,12 +1439,13 @@ def render_screener_page(_api_key):
 
         rows = []
         for d in filtered:
+            row_sym = currency_symbol(d.get("currency", "USD"))
             rows.append({
                 "Ticker":       d["ticker"],
                 "Company":      (d["company"] or d["ticker"])[:28],
                 "Sector":       d.get("sector", ""),
-                "Price":        f"${d['price']:,.2f}" if d.get("price") else "N/A",
-                "Mkt Cap":      _mcap_label(d.get("market_cap")),
+                "Price":        f"{row_sym}{d['price']:,.2f}" if d.get("price") else "N/A",
+                "Mkt Cap":      _mcap_label(d.get("market_cap"), row_sym),
                 "P/E":          _fmt(d.get("pe_ratio"), ".1f"),
                 "P/B":          _fmt(d.get("pb_ratio"), ".2f"),
                 "P/S":          _fmt(d.get("ps_ratio"), ".2f"),
@@ -1614,7 +1457,7 @@ def render_screener_page(_api_key):
                 "Cur Ratio":    _fmt(d.get("current_ratio"), ".2f"),
                 "Health":       f'{d.get("health_score","?")} ({d.get("health_grade","?")})',
                 "Analyst":      (d.get("analyst_rating") or "—").replace("_", " ").title(),
-                "Target":       f"${d['target_price']:,.2f}" if d.get("target_price") else "—",
+                "Target":       f"{row_sym}{d['target_price']:,.2f}" if d.get("target_price") else "—",
                 "Ex-Div Date":  d.get("ex_div_date") or "—",
             })
 
@@ -1671,8 +1514,9 @@ def render_screener_page(_api_key):
             for d in upcoming:
                 days_left     = d["_days_until"]
                 urgency_color = "#dc2626" if days_left <= 7 else ("#d97706" if days_left <= 21 else "#16a34a")
+                div_sym = currency_symbol(d.get("currency", "USD"))
                 dy_pct = _fmt(d.get("dividend_yield"), ".2f", "%", 100) if d.get("dividend_yield") else "—"
-                dr     = f"${d['dividend_rate']:.2f}/yr" if d.get("dividend_rate") else "—"
+                dr     = f"{div_sym}{d['dividend_rate']:.2f}/yr" if d.get("dividend_rate") else "—"
                 pay_d  = d.get("pay_date") or "—"
                 src    = d.get("_source", "yfinance")
 
@@ -1748,8 +1592,6 @@ def main():
         render_quarterly_page(api_key)
     elif page == "market-pulse":
         render_market_pulse_page(api_key)
-    elif page == "watchlist":
-        render_watchlist_page(api_key)
     elif page == "news-radar":
         render_news_radar_page(api_key)
     else:

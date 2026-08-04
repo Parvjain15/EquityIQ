@@ -156,6 +156,7 @@ def fetch_screener_data(tickers_tuple: tuple) -> list:
                 "industry":          info.get("industry") or "",
                 "country":           info.get("country") or "",
                 "exchange":          info.get("exchange") or "",
+                "currency":          info.get("currency") or "USD",
                 "price":             price,
                 "market_cap":        info.get("marketCap"),
                 # Valuation

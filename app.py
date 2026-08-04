@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import os
 import pandas as pd
 import plotly.graph_objects as go
@@ -45,18 +46,18 @@ def _render_news_card(article, highlight=False):
     urgency   = (article.get("urgency") or "low").lower()
 
     sentiment_styles = {
-        "positive": ("#16a34a", "#f0fdf4", "#bbf7d0"),
-        "negative": ("#dc2626", "#fef2f2", "#fecaca"),
-        "neutral":  ("#64748b", "#f8fafc", "#e2e8f0"),
-        "mixed":    ("#d97706", "#fffbeb", "#fde68a"),
+        "positive": ("#16A36A", "rgba(22,163,106,0.08)", "rgba(22,163,106,0.30)"),
+        "negative": ("#E5484D", "rgba(229,72,77,0.08)", "rgba(229,72,77,0.30)"),
+        "neutral":  ("#6F7580", "#F7F9FB", "#E5E8EC"),
+        "mixed":    ("#B9791F", "rgba(242,169,59,0.12)", "rgba(242,169,59,0.35)"),
     }
     urgency_styles = {
-        "high":   ("#dc2626", "#fef2f2"),
-        "medium": ("#d97706", "#fffbeb"),
-        "low":    ("#16a34a", "#f0fdf4"),
+        "high":   ("#E5484D", "rgba(229,72,77,0.08)"),
+        "medium": ("#B9791F", "rgba(242,169,59,0.12)"),
+        "low":    ("#16A36A", "rgba(22,163,106,0.08)"),
     }
-    s_txt, s_bg, s_bdr = sentiment_styles.get(sentiment, ("#64748b", "#f8fafc", "#e2e8f0"))
-    u_txt, u_bg        = urgency_styles.get(urgency, ("#64748b", "#f8fafc"))
+    s_txt, s_bg, s_bdr = sentiment_styles.get(sentiment, ("#6F7580", "#F7F9FB", "#E5E8EC"))
+    u_txt, u_bg        = urgency_styles.get(urgency, ("#6F7580", "#F7F9FB"))
 
     tickers     = article.get("affected_tickers") or []
     ticker_html = "".join(f'<span class="nr-ticker-tag">{_html.escape(str(t))}</span>' for t in tickers[:6])
@@ -74,7 +75,7 @@ def _render_news_card(article, highlight=False):
     impact_cat_e = _html.escape(str(article.get("impact_category") or "Other"))
     ai_generated = article.get("_ai_generated", False)
 
-    border_style = "border-left:4px solid #00d09c;background:#fafffe;" if highlight else ""
+    border_style = "border-left:4px solid #08A6DC;background:#F7FDFF;" if highlight else ""
 
     # Build HTML with concatenation to avoid multi-line f-string markdown parsing quirks
     h = f'<div class="nr-card" style="{border_style}">'
@@ -87,7 +88,7 @@ def _render_news_card(article, highlight=False):
     if sector_e:
         h += f'<span class="nr-meta-tag">🏭 {sector_e}</span>'
     if ai_generated:
-        h += '<span class="nr-meta-tag" style="color:#d97706;background:#fffbeb;border-color:#fde68a;">🤖 AI Knowledge</span>'
+        h += '<span class="nr-meta-tag" style="color:#B9791F;background:rgba(242,169,59,0.12);border-color:rgba(242,169,59,0.35);">🤖 AI Knowledge</span>'
     h += '</div>'
     src_text = f'{source_e} · {pub_date_e}' if pub_date_e else source_e
     h += f'<div class="nr-source">{src_text}</div>'
@@ -171,16 +172,16 @@ def display_results(metrics, valuation, analyzer, api_key=""):
         """, unsafe_allow_html=True)
     with breakdown_col:
         status_styles = {
-            "excellent": ("#16a34a", "#f0fdf4"),
-            "good":      ("#00b386", "#f0fdf8"),
-            "fair":      ("#d97706", "#fffbeb"),
-            "weak":      ("#ea580c", "#fff7ed"),
-            "poor":      ("#dc2626", "#fef2f2"),
-            "neutral":   ("#94a3b8", "#f5f5f6"),
+            "excellent": ("#16A36A", "rgba(22,163,106,0.08)"),
+            "good":      ("#16A36A", "rgba(22,163,106,0.08)"),
+            "fair":      ("#B9791F", "rgba(242,169,59,0.12)"),
+            "weak":      ("#B9791F", "rgba(242,169,59,0.12)"),
+            "poor":      ("#E5484D", "rgba(229,72,77,0.08)"),
+            "neutral":   ("#6F7580", "#F7F9FB"),
         }
         pills_html = ""
         for name, data in breakdown.items():
-            txt_color, bg_color = status_styles.get(data["status"], ("#94a3b8", "#f5f5f6"))
+            txt_color, bg_color = status_styles.get(data["status"], ("#6F7580", "#F7F9FB"))
             pills_html += f"""
             <div class="health-pill" style="border-color:{txt_color};background:{bg_color};">
                 <span class="hp-name">{name}</span>
@@ -383,11 +384,13 @@ def _render_topbar(current_page: str):
     ]
 
     with st.container(key="topbar"):
-        logo_col, nav_col, cta_col = st.columns([2.2, 6, 1.3], vertical_alignment="center")
+        logo_col, nav_col, login_col, cta_col, burger_col = st.columns(
+            [2.2, 5.2, 0.9, 1.5, 0.5], vertical_alignment="center"
+        )
 
         with logo_col:
             with st.container(key="topbar_logo"):
-                if st.button("🟢 EquityIQ", key="nav_home", type="tertiary"):
+                if st.button("🔵 EquityIQ", key="nav_home", type="tertiary"):
                     _navigate("home")
 
         with nav_col:
@@ -399,10 +402,29 @@ def _render_topbar(current_page: str):
                         if st.button(nav_label, key=f"nav_{nav_key}", type=btn_type, use_container_width=True):
                             _navigate(nav_key)
 
+        with login_col:
+            with st.container(key="topbar_login"):
+                if st.button("Log in", key="nav_login", type="tertiary"):
+                    st.toast("Login is coming soon — EquityIQ is currently open access.", icon="🔒")
+
         with cta_col:
             with st.container(key="topbar_cta"):
                 if st.button("Get Started", key="nav_cta", type="primary", use_container_width=True):
                     _navigate("ticker")
+
+        with burger_col:
+            with st.container(key="topbar_hamburger"):
+                with st.popover("☰"):
+                    with st.container(key="topbar_mobilemenu"):
+                        for nav_key, nav_label in nav_items:
+                            btn_type = "primary" if current_page == nav_key else "tertiary"
+                            if st.button(nav_label, key=f"mnav_{nav_key}", type=btn_type):
+                                _navigate(nav_key)
+                        st.markdown("<hr style='margin:6px 0;'>", unsafe_allow_html=True)
+                        if st.button("Log in", key="mnav_login", type="tertiary"):
+                            st.toast("Login is coming soon — EquityIQ is currently open access.", icon="🔒")
+                        if st.button("Get Started", key="mnav_cta", type="primary"):
+                            _navigate("ticker")
 
 
 # ── Live market ticker strip ───────────────────────────────────────────────────
@@ -455,41 +477,323 @@ def _render_ticker_strip():
 
 # ── Page: Home ─────────────────────────────────────────────────────────────────
 
-def render_home_page(api_key):
-    st.markdown("""
-    <div class="hero-section">
-        <div class="hero-title">Grow your wealth with<br><span class="accent">AI-powered</span> insights</div>
-        <div class="hero-sub">Upload reports, analyze stocks, compare tickers, and track market sentiment — all in one platform.</div>
+_HERO_DEMO_HTML = """
+<div id="eiqDemo" class="eiq-demo-root">
+  <div class="eiq-steps">
+    <div class="step" data-i="0"><span class="dot"></span><span class="cap">Search a company</span></div>
+    <div class="step" data-i="1"><span class="dot"></span><span class="cap">Health Score</span></div>
+    <div class="step" data-i="2"><span class="dot"></span><span class="cap">Upload 10-K</span></div>
+    <div class="step" data-i="3"><span class="dot"></span><span class="cap">Investment Memo</span></div>
+  </div>
+  <div class="frame-wrap">
+    <div class="device-frame">
+      <div class="bar"><span class="d"></span><span class="d"></span><span class="d"></span><span class="url">equityiq.app</span></div>
+      <div class="screen">
+        <div class="slide" data-slide="0">
+          <div class="s-label">Search any stock</div>
+          <div class="search-box"><span class="mag">&#128269;</span><span class="q">NVIDIA</span><span class="caret"></span></div>
+          <div class="result-row"><span class="res-tkr">NVDA</span><span class="res-name">NVIDIA Corporation</span><span class="res-px">$187.62</span></div>
+        </div>
+        <div class="slide" data-slide="1">
+          <div class="s-label">Stock Health Score</div>
+          <div class="ring-row">
+            <div class="mp-ring2"><div class="ring-inner"><span class="ring-label">0</span></div></div>
+            <div class="hbars">
+              <div class="hbar-row"><span>Profitability</span><div class="htrack"><div class="hbar" data-pct="88"></div></div></div>
+              <div class="hbar-row"><span>Valuation</span><div class="htrack"><div class="hbar warn" data-pct="70"></div></div></div>
+              <div class="hbar-row"><span>Debt</span><div class="htrack"><div class="hbar" data-pct="90"></div></div></div>
+              <div class="hbar-row"><span>Growth</span><div class="htrack"><div class="hbar" data-pct="82"></div></div></div>
+            </div>
+          </div>
+        </div>
+        <div class="slide" data-slide="2">
+          <div class="s-label">Upload a 10-K report</div>
+          <div class="file-chip">&#128196; NVDA_10-K_2025.pdf</div>
+          <div class="up-track"><div class="up-fill"></div></div>
+          <div class="fig-row"><span>Revenue</span><b>$130.5B</b></div>
+          <div class="fig-row"><span>Net Income</span><b>$72.9B</b></div>
+          <div class="fig-row"><span>EPS</span><b>$2.94</b></div>
+        </div>
+        <div class="slide" data-slide="3">
+          <div class="s-label">Investment Memo</div>
+          <div class="memo-block"><b>Thesis</b><span>Dominant AI-compute franchise with durable pricing power.</span></div>
+          <div class="memo-block"><b>Risks</b><span>Customer concentration and export-control exposure.</span></div>
+          <div class="memo-block"><b>Recommendation</b><span class="rec-buy">BUY &mdash; below intrinsic value estimate</span></div>
+        </div>
+      </div>
     </div>
-    """, unsafe_allow_html=True)
-    with st.container(key="hero_cta"):
-        if st.button("Get started", key="hero_cta_btn", type="primary"):
-            _navigate("ticker")
+    <div class="fc fc1"><span class="fc-dot" style="background:var(--pos)"></span>Health Score&nbsp;<b>A</b></div>
+    <div class="fc fc2"><span class="fc-dot" style="background:var(--pos)"></span>Revenue Growth&nbsp;<b class="pos">+18.4%</b></div>
+    <div class="fc fc3"><span class="fc-dot" style="background:var(--pos)"></span>Debt Risk&nbsp;<b class="pos">Low</b></div>
+    <div class="fc fc4"><span class="fc-dot" style="background:var(--pos)"></span>Sentiment&nbsp;<b class="pos">Positive</b></div>
+  </div>
+</div>
+<style>
+  :root {
+    --blue:#08A6DC; --blue-hover:#008CC0; --pale:#E6F7FC;
+    --text:#111318; --sec:#6F7580; --border:#E5E8EC; --bg-alt:#F7F9FB;
+    --pos:#16A36A; --neg:#E5484D; --warn:#F2A93B;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin:0; padding:0; background:transparent; font-family: Inter, -apple-system, BlinkMacSystemFont, sans-serif; }
+  .eiq-demo-root { display:flex; align-items:center; gap:10px; padding: 30px 6px; }
+  .eiq-steps { display:flex; flex-direction:column; gap:22px; flex-shrink:0; padding-top:4px; }
+  .step { display:flex; align-items:flex-start; gap:8px; }
+  .step .dot { width:9px; height:9px; border-radius:50%; background:var(--border); margin-top:3px; flex-shrink:0; transition:background .4s, box-shadow .4s; }
+  .step .cap { font-size:11px; color:var(--sec); max-width:70px; line-height:1.35; transition:color .4s, font-weight .4s; }
+  .step.active .dot { background:var(--blue); box-shadow:0 0 0 4px var(--pale); }
+  .step.active .cap { color:var(--blue-hover); font-weight:700; }
+  .frame-wrap { position:relative; flex:1; padding:22px; min-width:0; }
+  .device-frame { background:#fff; border:1px solid var(--border); border-radius:18px; box-shadow:0 1px 2px rgba(17,19,24,.04), 0 8px 24px rgba(17,19,24,.07); overflow:hidden; }
+  .bar { display:flex; align-items:center; gap:6px; padding:10px 14px; border-bottom:1px solid var(--border); background:var(--bg-alt); }
+  .d { width:7px; height:7px; border-radius:50%; background:var(--border); }
+  .url { margin-left:8px; font-size:11px; color:var(--sec); background:#fff; border:1px solid var(--border); border-radius:6px; padding:2px 10px; flex:1; }
+  .screen { position:relative; height:250px; }
+  .slide { position:absolute; inset:0; padding:20px 22px; opacity:0; transform:translateY(6px); transition:opacity .5s ease, transform .5s ease; pointer-events:none; }
+  .slide.active { opacity:1; transform:translateY(0); pointer-events:auto; }
+  .s-label { font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; color:var(--sec); margin-bottom:16px; }
+  .search-box { display:flex; align-items:center; gap:8px; border:1px solid var(--border); border-radius:10px; padding:10px 14px; font-size:14px; color:var(--text); background:var(--bg-alt); }
+  .search-box .mag { font-size:13px; }
+  .caret { width:1px; height:14px; background:var(--blue); animation: blink 1s step-end infinite; }
+  @keyframes blink { 50% { opacity:0; } }
+  .result-row { display:flex; align-items:center; gap:10px; margin-top:12px; padding:10px 12px; border:1px solid var(--border); border-radius:10px; }
+  .res-tkr { font-weight:800; font-size:12px; color:var(--blue-hover); font-family: monospace; }
+  .res-name { flex:1; font-size:12px; color:var(--text); }
+  .res-px { font-size:12px; font-weight:700; color:var(--text); font-variant-numeric: tabular-nums; }
+  .ring-row { display:flex; align-items:center; gap:20px; }
+  .mp-ring2 { --p:0; width:82px; height:82px; border-radius:50%; flex-shrink:0; background:conic-gradient(var(--pos) calc(var(--p) * 1%), var(--border) 0); transition: --p .9s cubic-bezier(.16,1,.3,1); }
+  @property --p { syntax:'<number>'; inherits:true; initial-value:0; }
+  .ring-inner { width:62px; height:62px; margin:10px; border-radius:50%; background:#fff; display:flex; align-items:center; justify-content:center; font-size:19px; font-weight:800; color:var(--pos); }
+  .hbars { flex:1; }
+  .hbar-row { font-size:10.5px; color:var(--sec); margin-bottom:8px; }
+  .hbar-row span { display:block; margin-bottom:3px; }
+  .htrack { height:6px; border-radius:6px; background:var(--border); overflow:hidden; }
+  .hbar { height:100%; width:0%; border-radius:6px; background:var(--pos); transition:width .8s cubic-bezier(.16,1,.3,1); }
+  .hbar.warn { background:var(--warn); }
+  .file-chip { display:inline-flex; align-items:center; gap:8px; background:var(--bg-alt); border:1px solid var(--border); border-radius:10px; padding:8px 14px; font-size:12px; font-weight:600; color:var(--text); margin-bottom:14px; }
+  .up-track { height:7px; border-radius:7px; background:var(--border); overflow:hidden; margin-bottom:16px; }
+  .up-fill { height:100%; width:0%; border-radius:7px; background:var(--blue); transition:width 1.1s cubic-bezier(.16,1,.3,1); }
+  .fig-row { display:flex; justify-content:space-between; font-size:12.5px; padding:6px 0; border-bottom:1px solid var(--border); opacity:0; transform:translateY(6px); transition:opacity .4s ease, transform .4s ease; }
+  .fig-row span { color:var(--sec); }
+  .fig-row b { color:var(--text); font-family:monospace; }
+  .memo-block { margin-bottom:12px; opacity:0; transform:translateY(6px); transition:opacity .4s ease, transform .4s ease; }
+  .memo-block b { display:block; font-size:10px; text-transform:uppercase; letter-spacing:.5px; color:var(--blue-hover); margin-bottom:3px; }
+  .memo-block span { font-size:12px; color:var(--sec); line-height:1.5; }
+  .rec-buy { color:var(--pos) !important; font-weight:700; }
+  .fc { position:absolute; background:#fff; border:1px solid var(--border); border-radius:12px; box-shadow:0 1px 2px rgba(17,19,24,.04), 0 8px 20px rgba(17,19,24,.08); padding:8px 12px; font-size:11px; color:var(--sec); display:flex; align-items:center; gap:6px; opacity:0; animation: fcIn .5s ease forwards; white-space:nowrap; }
+  .fc b { color:var(--text); }
+  .fc b.pos { color:var(--pos); }
+  .fc-dot { width:7px; height:7px; border-radius:50%; }
+  .fc1 { top:2px; left:14px; animation-delay:.3s; }
+  .fc2 { top:2px; right:14px; animation-delay:.6s; }
+  .fc3 { bottom:2px; left:38px; animation-delay:.9s; }
+  .fc4 { bottom:2px; right:38px; animation-delay:1.2s; }
+  @keyframes fcIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
+  @media (prefers-reduced-motion: reduce) {
+    .slide { transition:none; }
+    .caret { animation:none; opacity:1; }
+    .fc { animation:none; opacity:1; }
+    .mp-ring2, .hbar, .up-fill { transition:none; }
+  }
+</style>
+<script>
+(function () {
+  var root = document.getElementById('eiqDemo');
+  var slides = root.querySelectorAll('.slide');
+  var steps = root.querySelectorAll('.eiq-steps .step');
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var idx = 0;
+  var timer = null;
 
-    st.markdown("""
-    <div class="features-row">
-        <div class="feature-card">
-            <span class="feature-dot green"></span>
-            <div class="feature-name">AI Report Analyzer</div>
-            <div class="feature-desc">Upload 10-K / 10-Q reports and get AI-extracted financials, ratios &amp; health score instantly</div>
+  function countUp(el, target, dur) {
+    var start = performance.now();
+    function tick(now) {
+      var p = Math.min(1, (now - start) / dur);
+      var eased = 1 - Math.pow(1 - p, 3);
+      el.textContent = Math.round(target * eased);
+      if (p < 1) { requestAnimationFrame(tick); }
+      else { el.textContent = 'A'; }
+    }
+    requestAnimationFrame(tick);
+  }
+
+  function activate(i) {
+    for (var s = 0; s < slides.length; s++) {
+      slides[s].classList.toggle('active', s === i);
+    }
+    for (var s2 = 0; s2 < steps.length; s2++) {
+      steps[s2].classList.toggle('active', s2 === i);
+    }
+    if (i === 1) {
+      var ring = root.querySelector('.mp-ring2');
+      var label = root.querySelector('.ring-label');
+      if (ring) { ring.style.setProperty('--p', 0); requestAnimationFrame(function () { ring.style.setProperty('--p', 84); }); }
+      if (label) { countUp(label, 84, 900); }
+      var bars = root.querySelectorAll('.hbar');
+      bars.forEach(function (b, bi) {
+        b.style.width = '0%';
+        setTimeout(function () { b.style.width = b.dataset.pct + '%'; }, 150 + bi * 100);
+      });
+    }
+    if (i === 2) {
+      var fill = root.querySelector('.up-fill');
+      if (fill) { fill.style.width = '0%'; setTimeout(function () { fill.style.width = '100%'; }, 100); }
+      var figs = root.querySelectorAll('.fig-row');
+      figs.forEach(function (r, ri) {
+        r.style.opacity = 0; r.style.transform = 'translateY(6px)';
+        setTimeout(function () { r.style.opacity = 1; r.style.transform = 'translateY(0)'; }, 750 + ri * 220);
+      });
+    }
+    if (i === 3) {
+      var blocks = root.querySelectorAll('.memo-block');
+      blocks.forEach(function (r, ri) {
+        r.style.opacity = 0; r.style.transform = 'translateY(6px)';
+        setTimeout(function () { r.style.opacity = 1; r.style.transform = 'translateY(0)'; }, 150 + ri * 300);
+      });
+    }
+  }
+
+  function next() { idx = (idx + 1) % slides.length; activate(idx); }
+  function start() { if (!timer) { timer = setInterval(next, 2400); } }
+  function stop() { clearInterval(timer); timer = null; }
+
+  activate(0);
+
+  if (!reduce) {
+    if ('IntersectionObserver' in window) {
+      var io = new IntersectionObserver(function (entries) {
+        entries.forEach(function (e) { if (e.isIntersecting) { start(); } else { stop(); } });
+      }, { threshold: 0.3 });
+      io.observe(root);
+    } else {
+      start();
+    }
+  } else {
+    activate(1);
+  }
+})();
+</script>
+"""
+
+
+def _render_story_section(eyebrow, title, desc, preview_html, reverse=False, anchor_id=None, shaded=False):
+    alt_class = " alt" if reverse else ""
+    shaded_class = " story-shaded" if shaded else ""
+    id_attr = f' id="{anchor_id}"' if anchor_id else ""
+    # Flatten preview_html to a single line first — Streamlit's markdown renderer treats
+    # 4+ space-indented lines as a fenced code block, which was escaping our injected HTML
+    # whenever a multi-line, indented preview string landed inside this f-string.
+    preview_flat = " ".join(line.strip() for line in preview_html.strip().splitlines())
+    html = (
+        f'<div class="story-section-outer{shaded_class}"{id_attr}>'
+        f'<div class="story-section{alt_class}">'
+        f'<div>'
+        f'<div class="story-eyebrow">{eyebrow}</div>'
+        f'<div class="story-title">{title}</div>'
+        f'<div class="story-desc">{desc}</div>'
+        f'</div>'
+        f'<div class="story-preview">{preview_flat}</div>'
+        f'</div>'
+        f'</div>'
+    )
+    st.markdown(html, unsafe_allow_html=True)
+
+
+def render_home_page(api_key):
+    with st.container(key="hero_wrap"):
+        left_col, right_col = st.columns([1.05, 0.95], gap="large", vertical_alignment="center")
+
+        with left_col:
+            st.markdown("""
+            <div class="hero-label">✨ AI-powered equity research</div>
+            <div class="hero-title-v2">Research any stock.<br>Understand it <span class="accent">instantly</span>.</div>
+            <div class="hero-sub-v2">Upload financial reports, evaluate company health, compare stocks and monitor market-moving news — all from one intelligent research platform.</div>
+            """, unsafe_allow_html=True)
+
+            cta_a, cta_b = st.columns([1, 1.2])
+            with cta_a:
+                with st.container(key="hero_cta_primary"):
+                    if st.button("Analyze a stock", key="hero_primary_btn", use_container_width=True):
+                        _navigate("ticker")
+            with cta_b:
+                st.markdown(
+                    '<a class="btn-secondary" href="#eiq-story-1">Explore the platform</a>',
+                    unsafe_allow_html=True,
+                )
+
+            st.markdown(
+                '<div class="hero-trust">Built for investors, analysts and research teams.</div>',
+                unsafe_allow_html=True,
+            )
+
+        with right_col:
+            components.html(_HERO_DEMO_HTML, height=430, scrolling=False)
+
+    _render_story_section(
+        "10-K / 10-Q Analyzer",
+        "Turn filings into answers",
+        "Upload an annual or quarterly report and EquityIQ extracts revenue, margins, cash flow and risk factors in seconds — no manual line-item hunting.",
+        """
+        <div class="mp-file-chip">📄 NVDA_10-K_2025.pdf</div>
+        <div class="mp-progress-track"><div class="mp-progress-fill"></div></div>
+        <div class="mp-figure-row" style="animation-delay:.1s"><span class="mp-fig-label">Revenue</span><span class="mp-fig-value">$130.5B</span></div>
+        <div class="mp-figure-row" style="animation-delay:.3s"><span class="mp-fig-label">Net Income</span><span class="mp-fig-value">$72.9B</span></div>
+        <div class="mp-figure-row" style="animation-delay:.5s"><span class="mp-fig-label">Free Cash Flow</span><span class="mp-fig-value">$60.7B</span></div>
+        <div class="mp-figure-row" style="animation-delay:.7s"><span class="mp-fig-label">EPS</span><span class="mp-fig-value">$2.94</span></div>
+        """,
+        reverse=False,
+        anchor_id="eiq-story-1",
+    )
+
+    _render_story_section(
+        "Stock Health Score",
+        "Understand company health at a glance",
+        "A composite A–F grade built from profitability, valuation, debt, growth and cash-flow signals — so you can size up a business before reading a single filing.",
+        """
+        <div class="mp-ring-wrap">
+            <div class="mp-ring"><div class="mp-ring-inner">A</div></div>
+            <div style="flex:1;">
+                <div class="mp-bar-row"><div class="mp-bar-label"><span>Profitability</span><span>88</span></div><div class="mp-bar-track"><div class="mp-bar-fill" style="width:88%"></div></div></div>
+                <div class="mp-bar-row"><div class="mp-bar-label"><span>Valuation</span><span>70</span></div><div class="mp-bar-track"><div class="mp-bar-fill" style="width:70%;background:var(--eiq-warning)"></div></div></div>
+                <div class="mp-bar-row"><div class="mp-bar-label"><span>Debt</span><span>90</span></div><div class="mp-bar-track"><div class="mp-bar-fill" style="width:90%"></div></div></div>
+                <div class="mp-bar-row"><div class="mp-bar-label"><span>Growth</span><span>82</span></div><div class="mp-bar-track"><div class="mp-bar-fill" style="width:82%"></div></div></div>
+                <div class="mp-bar-row"><div class="mp-bar-label"><span>Cash Flow</span><span>76</span></div><div class="mp-bar-track"><div class="mp-bar-fill" style="width:76%"></div></div></div>
+            </div>
         </div>
-        <div class="feature-card">
-            <span class="feature-dot blue"></span>
-            <div class="feature-name">Stock Health Score</div>
-            <div class="feature-desc">Composite A–F grade across profitability, valuation, debt, growth &amp; cash flow</div>
-        </div>
-        <div class="feature-card">
-            <span class="feature-dot purple"></span>
-            <div class="feature-name">Investment Memo</div>
-            <div class="feature-desc">AI-generated professional investment memo with thesis, risks &amp; recommendation</div>
-        </div>
-        <div class="feature-card">
-            <span class="feature-dot orange"></span>
-            <div class="feature-name">News Radar</div>
-            <div class="feature-desc">Global news classified by sentiment, urgency &amp; impact with affected-stock detection</div>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+        """,
+        reverse=True,
+        shaded=True,
+    )
+
+    _render_story_section(
+        "Investment Memo",
+        "Build an investment case in minutes",
+        "EquityIQ assembles a professional memo — thesis, opportunities, risks and a clear recommendation — grounded in the numbers it just extracted.",
+        """
+        <div class="mp-memo-line" style="animation-delay:.1s">Thesis</div>
+        <div class="mp-memo-text" style="animation-delay:.2s">Dominant AI-compute franchise with durable pricing power.</div>
+        <div class="mp-memo-line" style="animation-delay:.5s">Opportunities</div>
+        <div class="mp-memo-text" style="animation-delay:.6s">Data-center demand and expanding software-attach margins.</div>
+        <div class="mp-memo-line" style="animation-delay:.9s">Risks</div>
+        <div class="mp-memo-text" style="animation-delay:1.0s">Customer concentration and export-control exposure.</div>
+        <div class="mp-memo-line" style="animation-delay:1.3s">Recommendation</div>
+        <div class="mp-memo-text" style="animation-delay:1.4s"><b style="color:var(--eiq-positive);">BUY</b> — trading below intrinsic value estimate.</div>
+        """,
+        reverse=False,
+    )
+
+    _render_story_section(
+        "News Radar",
+        "Know what is moving the market",
+        "Every headline is classified by sentiment, urgency and the tickers it affects — so you spend time on the news that actually matters to your positions.",
+        """
+        <div class="mp-news-row" style="animation-delay:.1s"><span class="mp-news-pill pos">Positive</span><span class="mp-news-headline">NVIDIA beats on data-center revenue, raises guidance</span></div>
+        <div class="mp-news-row" style="animation-delay:.3s"><span class="mp-news-pill warn">Medium</span><span class="mp-news-headline">New export restrictions could affect China shipments</span></div>
+        <div class="mp-news-row" style="animation-delay:.5s"><span class="mp-news-pill neg">High</span><span class="mp-news-headline">Supplier delay raises short-term supply-chain risk</span></div>
+        """,
+        reverse=True,
+        shaded=True,
+    )
 
 
 # ── Page: PDF Analysis ─────────────────────────────────────────────────────────
@@ -1126,9 +1430,9 @@ def render_news_radar_page(api_key):
             overall       = summary_data["overall"]
             counts        = summary_data.get("counts", {})
             overall_color = {
-                "Positive": "#16a34a", "Negative": "#dc2626",
-                "Neutral":  "#64748b", "Mixed":    "#d97706",
-            }.get(overall, "#94a3b8")
+                "Positive": "#16A36A", "Negative": "#E5484D",
+                "Neutral":  "#6F7580", "Mixed":    "#B9791F",
+            }.get(overall, "#6F7580")
 
             st.markdown('<div class="section-head">Market Sentiment Summary</div>', unsafe_allow_html=True)
             sc1, sc2, sc3, sc4, sc5 = st.columns(5)
@@ -1525,7 +1829,7 @@ def render_screener_page(_api_key):
             st.markdown('<div style="font-size:0.85rem;color:#64748b;margin-bottom:8px;">US &amp; Global Stocks</div>', unsafe_allow_html=True)
             for d in upcoming:
                 days_left     = d["_days_until"]
-                urgency_color = "#dc2626" if days_left <= 7 else ("#d97706" if days_left <= 21 else "#16a34a")
+                urgency_color = "#E5484D" if days_left <= 7 else ("#B9791F" if days_left <= 21 else "#16A36A")
                 div_sym = currency_symbol(d.get("currency", "USD"))
                 dy_pct = _fmt(d.get("dividend_yield"), ".2f", "%", 100) if d.get("dividend_yield") else "—"
                 dr     = f"{div_sym}{d['dividend_rate']:.2f}/yr" if d.get("dividend_rate") else "—"
@@ -1558,7 +1862,7 @@ def render_screener_page(_api_key):
                     days_l = (ex_d - today2).days
                 except (ValueError, TypeError):
                     days_l = 0
-                urg_c = "#dc2626" if days_l <= 7 else ("#d97706" if days_l <= 21 else "#16a34a")
+                urg_c = "#E5484D" if days_l <= 7 else ("#B9791F" if days_l <= 21 else "#16A36A")
 
                 h  = '<div class="watchlist-card wl-normal" style="margin-bottom:10px;">'
                 h += '<div class="wl-row">'

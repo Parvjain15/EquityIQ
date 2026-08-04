@@ -254,14 +254,14 @@ def compute_health_score(d: dict) -> tuple:
 
     final = round((score / avail) * 100)
     if final >= 80:
-        return final, "A", "#16a34a"
+        return final, "A", "#16A36A"
     elif final >= 65:
-        return final, "B", "#00b386"
+        return final, "B", "#16A36A"
     elif final >= 50:
-        return final, "C", "#d97706"
+        return final, "C", "#F2A93B"
     elif final >= 35:
-        return final, "D", "#ea580c"
-    return final, "F", "#dc2626"
+        return final, "D", "#F2A93B"
+    return final, "F", "#E5484D"
 
 
 def get_upcoming_dividends(stocks: list, days: int = 60) -> list:

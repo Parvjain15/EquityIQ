@@ -691,15 +691,15 @@ JSON format:
         normalized = min(100, round((earned / available_max) * 100)) if available_max > 0 else 0
 
         if normalized >= 80:
-            grade, color = "A", "#16a34a"
+            grade, color = "A", "#16A36A"
         elif normalized >= 65:
-            grade, color = "B", "#00b386"
+            grade, color = "B", "#16A36A"
         elif normalized >= 50:
-            grade, color = "C", "#d97706"
+            grade, color = "C", "#F2A93B"
         elif normalized >= 35:
-            grade, color = "D", "#ea580c"
+            grade, color = "D", "#F2A93B"
         else:
-            grade, color = "F", "#dc2626"
+            grade, color = "F", "#E5484D"
 
         return {"score": normalized, "grade": grade, "color": color, "breakdown": breakdown}
 

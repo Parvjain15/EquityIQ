@@ -1,32 +1,27 @@
 import streamlit as st
 
 
-def setup_page():
-    """Sets up the Streamlit page configuration and Groww-inspired light theme CSS."""
-    st.set_page_config(
-        page_title="EquityIQ — Smart Financial Intelligence",
-        page_icon="📈",
-        layout="wide",
-        initial_sidebar_state="collapsed"
-    )
-
-    st.markdown("""
-        <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
-
-        /* === DESIGN TOKENS === */
+# ── Design tokens: one CSS custom-property set per theme. setup_page() picks
+#    the active set with a plain Python conditional and concatenates it into
+#    the (much larger, non-f-string) stylesheet below — every component that
+#    already reads var(--eiq-*) repaints automatically, no per-component
+#    dark-mode CSS needed. ─────────────────────────────────────────────────
+_LIGHT_TOKENS = """
         :root {
             --eiq-bg: #FFFFFF;
             --eiq-bg-alt: #F7F9FB;
+            --eiq-surface: #FFFFFF;
             --eiq-text: #111318;
             --eiq-text-secondary: #6F7580;
             --eiq-border: #E5E8EC;
             --eiq-blue: #08A6DC;
             --eiq-blue-hover: #008CC0;
             --eiq-blue-pale: #E6F7FC;
+            --eiq-blue-pale-border: #CDEFFA;
             --eiq-positive: #16A36A;
             --eiq-negative: #E5484D;
             --eiq-warning: #F2A93B;
+            --eiq-warning-text: #B9791F;
             --eiq-positive-bg: rgba(22,163,106,0.08);
             --eiq-positive-border: rgba(22,163,106,0.30);
             --eiq-negative-bg: rgba(229,72,77,0.08);
@@ -35,7 +30,54 @@ def setup_page():
             --eiq-warning-border: rgba(242,169,59,0.35);
             --eiq-radius: 16px;
             --eiq-shadow: 0 1px 2px rgba(17,19,24,0.04), 0 8px 24px rgba(17,19,24,0.05);
+            --eiq-bg-translucent: rgba(255,255,255,0.92);
         }
+"""
+
+_DARK_TOKENS = """
+        :root {
+            --eiq-bg: #0A0C10;
+            --eiq-bg-alt: #12151B;
+            --eiq-surface: #171B22;
+            --eiq-text: #F2F4F7;
+            --eiq-text-secondary: #9BA3AF;
+            --eiq-border: #262B34;
+            --eiq-blue: #1CB6E8;
+            --eiq-blue-hover: #4FC9F0;
+            --eiq-blue-pale: rgba(28,182,232,0.14);
+            --eiq-blue-pale-border: rgba(28,182,232,0.30);
+            --eiq-positive: #22C58A;
+            --eiq-negative: #F2666B;
+            --eiq-warning: #F5BB55;
+            --eiq-warning-text: #F5BB55;
+            --eiq-positive-bg: rgba(34,197,138,0.14);
+            --eiq-positive-border: rgba(34,197,138,0.35);
+            --eiq-negative-bg: rgba(242,102,107,0.14);
+            --eiq-negative-border: rgba(242,102,107,0.35);
+            --eiq-warning-bg: rgba(245,187,85,0.14);
+            --eiq-warning-border: rgba(245,187,85,0.35);
+            --eiq-radius: 16px;
+            --eiq-shadow: 0 1px 2px rgba(0,0,0,0.35), 0 8px 24px rgba(0,0,0,0.45);
+            --eiq-bg-translucent: rgba(10,12,16,0.92);
+        }
+"""
+
+
+def setup_page(dark_mode: bool = False):
+    """Sets up the Streamlit page configuration and the EquityIQ theme CSS."""
+    st.set_page_config(
+        page_title="EquityIQ — Smart Financial Intelligence",
+        page_icon="📈",
+        layout="wide",
+        initial_sidebar_state="collapsed"
+    )
+
+    tokens = _DARK_TOKENS if dark_mode else _LIGHT_TOKENS
+
+    st.markdown("""
+        <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+        """ + tokens + """
 
         /* === HIDE SIDEBAR & DEFAULTS === */
         section[data-testid="stSidebar"] { display: none !important; }
@@ -98,7 +140,7 @@ def setup_page():
             position: sticky;
             top: 0;
             z-index: 999;
-            background: rgba(255,255,255,0.92);
+            background: var(--eiq-bg-translucent);
             backdrop-filter: blur(8px);
             border-bottom: 1px solid var(--eiq-border);
             padding: 10px 0;
@@ -168,11 +210,22 @@ def setup_page():
         }
         .st-key-topbar_cta .stButton > button:hover { background: var(--eiq-blue-hover) !important; color: #fff !important; }
 
+        /* Light/dark theme toggle */
+        .st-key-topbar_theme .stButton > button {
+            border: 1px solid var(--eiq-border) !important;
+            background: var(--eiq-surface) !important;
+            border-radius: 10px !important;
+            padding: 8px 10px !important;
+            font-size: 1rem !important;
+            line-height: 1 !important;
+        }
+        .st-key-topbar_theme .stButton > button:hover { border-color: var(--eiq-blue) !important; }
+
         /* Mobile hamburger (st.popover) — hidden on desktop, shown under 900px */
         .st-key-topbar_hamburger { display: none; }
         .st-key-topbar_hamburger button[data-testid="stPopoverButton"] {
             border: 1px solid var(--eiq-border) !important;
-            background: #fff !important;
+            background: var(--eiq-surface) !important;
             border-radius: 10px !important;
             padding: 8px 12px !important;
             font-size: 1.1rem !important;
@@ -244,7 +297,7 @@ def setup_page():
             height: 48px;
             padding: 0 28px;
             border-radius: 12px;
-            background: #fff;
+            background: var(--eiq-surface);
             color: var(--eiq-text);
             border: 1px solid var(--eiq-border);
             font-weight: 600;
@@ -308,7 +361,7 @@ def setup_page():
             box-shadow: 0 4px 14px rgba(8,166,220,0.25);
         }
         .st-key-hero_cta_secondary .stButton > button {
-            background: #fff !important;
+            background: var(--eiq-surface) !important;
             color: var(--eiq-text) !important;
             border: 1px solid var(--eiq-border) !important;
             border-radius: 12px !important;
@@ -361,7 +414,7 @@ def setup_page():
         .eiq-step-caption.active { color: var(--eiq-blue-hover); font-weight: 700; }
         .device-frame {
             flex: 1;
-            background: #fff;
+            background: var(--eiq-surface);
             border: 1px solid var(--eiq-border);
             border-radius: 18px;
             box-shadow: var(--eiq-shadow);
@@ -381,7 +434,7 @@ def setup_page():
             margin-left: 10px;
             font-size: 0.7rem;
             color: var(--eiq-text-secondary);
-            background: #fff;
+            background: var(--eiq-surface);
             border: 1px solid var(--eiq-border);
             border-radius: 6px;
             padding: 3px 10px;
@@ -391,7 +444,7 @@ def setup_page():
         /* === FLOATING CARDS === */
         .eiq-float-card {
             position: absolute;
-            background: #fff;
+            background: var(--eiq-surface);
             border: 1px solid var(--eiq-border);
             border-radius: 14px;
             box-shadow: var(--eiq-shadow);
@@ -448,7 +501,7 @@ def setup_page():
             max-width: 440px;
         }
         .story-preview {
-            background: #fff;
+            background: var(--eiq-surface);
             border: 1px solid var(--eiq-border);
             border-radius: var(--eiq-radius);
             box-shadow: var(--eiq-shadow);
@@ -492,7 +545,7 @@ def setup_page():
         }
         @keyframes mpRingSweep { 0% { --eiq-ring-pct: 0; } 50% { --eiq-ring-pct: 84; } 100% { --eiq-ring-pct: 84; } }
         .mp-ring-inner {
-            width: 82px; height: 82px; border-radius: 50%; background: #fff;
+            width: 82px; height: 82px; border-radius: 50%; background: var(--eiq-surface);
             display: flex; align-items: center; justify-content: center;
             font-size: 1.7rem; font-weight: 800; color: var(--eiq-positive);
         }
@@ -529,7 +582,7 @@ def setup_page():
         }
         .mp-news-pill.pos { background: var(--eiq-positive-bg); color: var(--eiq-positive); }
         .mp-news-pill.neg { background: var(--eiq-negative-bg); color: var(--eiq-negative); }
-        .mp-news-pill.warn { background: var(--eiq-warning-bg); color: #B9791F; }
+        .mp-news-pill.warn { background: var(--eiq-warning-bg); color: var(--eiq-warning-text); }
         .mp-news-headline { font-size: 0.82rem; color: var(--eiq-text); flex: 1; }
 
         @media (prefers-reduced-motion: reduce) {
@@ -574,7 +627,7 @@ def setup_page():
 
         /* === METRIC CARDS === */
         .metric-card {
-            background: #ffffff;
+            background: var(--eiq-surface);
             border: 1px solid var(--eiq-border);
             border-radius: 14px;
             padding: 20px;
@@ -600,7 +653,7 @@ def setup_page():
         /* === VALUATION CARDS === */
         .val-card {
             background: var(--eiq-blue-pale);
-            border: 1px solid #CDEFFA;
+            border: 1px solid var(--eiq-blue-pale-border);
             border-radius: 14px;
             padding: 28px 24px;
             text-align: center;
@@ -625,7 +678,7 @@ def setup_page():
 
         /* === INFO CARDS === */
         .info-card {
-            background: #ffffff;
+            background: var(--eiq-surface);
             border: 1px solid var(--eiq-border);
             border-radius: 14px;
             padding: 22px;
@@ -749,7 +802,7 @@ def setup_page():
 
         /* === INPUTS === */
         .stTextInput > div > div > input {
-            background-color: #ffffff !important;
+            background-color: var(--eiq-surface) !important;
             border: 1px solid var(--eiq-border) !important;
             border-radius: 10px;
             color: var(--eiq-text) !important;
@@ -760,7 +813,7 @@ def setup_page():
             border-color: var(--eiq-blue) !important;
             box-shadow: 0 0 0 1px rgba(8,166,220,0.25) !important;
         }
-        .stTextInput > div > div > input::placeholder { color: #9AA0AB !important; }
+        .stTextInput > div > div > input::placeholder { color: var(--eiq-text-secondary) !important; }
 
         /* === FILE UPLOADER === */
         .stFileUploader {
@@ -789,7 +842,7 @@ def setup_page():
         .verdict-signal { font-size: 1.8rem; font-weight: 800; margin: 8px 0; }
         .verdict-signal.buy { color: var(--eiq-positive); }
         .verdict-signal.sell { color: var(--eiq-negative); }
-        .verdict-signal.hold { color: #B9791F; }
+        .verdict-signal.hold { color: var(--eiq-warning-text); }
         .verdict-price {
             font-family: 'JetBrains Mono', monospace;
             font-size: 1.2rem; font-weight: 600; color: var(--eiq-text); margin: 6px 0;
@@ -799,7 +852,7 @@ def setup_page():
 
         /* === NEWS CARDS === */
         .news-card {
-            background: #ffffff;
+            background: var(--eiq-surface);
             border: 1px solid var(--eiq-border);
             border-left: 3px solid var(--eiq-blue);
             border-radius: 10px;
@@ -812,12 +865,12 @@ def setup_page():
             font-size: 0.9rem; font-weight: 600; color: var(--eiq-text); text-decoration: none;
         }
         .news-title a:hover { color: var(--eiq-blue-hover); }
-        .news-meta { font-size: 0.73rem; color: #9AA0AB; margin-top: 5px; }
+        .news-meta { font-size: 0.73rem; color: var(--eiq-text-secondary); margin-top: 5px; }
         .news-meta span { margin-right: 10px; }
 
         /* === SENTIMENT NEWS CARDS === */
         .sentiment-card {
-            background: #ffffff;
+            background: var(--eiq-surface);
             border: 1px solid var(--eiq-border);
             border-radius: 14px;
             padding: 20px;
@@ -829,7 +882,7 @@ def setup_page():
             font-size: 0.92rem; font-weight: 600; color: var(--eiq-text);
             margin-bottom: 8px; line-height: 1.4;
         }
-        .sentiment-source { font-size: 0.72rem; color: #9AA0AB; margin-bottom: 12px; }
+        .sentiment-source { font-size: 0.72rem; color: var(--eiq-text-secondary); margin-bottom: 12px; }
         .sentiment-stocks {
             display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px;
         }
@@ -853,7 +906,7 @@ def setup_page():
         }
         .sentiment-badge.positive { background: var(--eiq-positive-bg); color: var(--eiq-positive); }
         .sentiment-badge.negative { background: var(--eiq-negative-bg); color: var(--eiq-negative); }
-        .sentiment-badge.mixed { background: var(--eiq-warning-bg); color: #B9791F; }
+        .sentiment-badge.mixed { background: var(--eiq-warning-bg); color: var(--eiq-warning-text); }
 
         /* === QUARTERLY CARDS === */
         .pros-card {
@@ -865,7 +918,7 @@ def setup_page():
             border-radius: 14px; padding: 24px 20px;
         }
         .trajectory-card {
-            background: var(--eiq-blue-pale); border: 1px solid #CDEFFA;
+            background: var(--eiq-blue-pale); border: 1px solid var(--eiq-blue-pale-border);
             border-radius: 14px; padding: 24px 20px;
         }
         .pc-card-title {
@@ -876,7 +929,7 @@ def setup_page():
         .pc-card-title.pros { color: var(--eiq-positive); }
         .pc-card-title.cons { color: var(--eiq-negative); }
         .pc-card-title.trajectory { color: var(--eiq-blue-hover); }
-        .pc-bullet { font-size: 0.85rem; color: #4A4E58; line-height: 1.8; }
+        .pc-bullet { font-size: 0.85rem; color: var(--eiq-text-secondary); line-height: 1.8; }
         .quarter-badge {
             display: inline-block; background: var(--eiq-blue); color: #fff;
             padding: 3px 12px; border-radius: 6px;
@@ -924,7 +977,7 @@ def setup_page():
         .health-score-widget {
             text-align: center;
             padding: 24px 16px;
-            background: #ffffff;
+            background: var(--eiq-surface);
             border: 1px solid var(--eiq-border);
             border-radius: 14px;
             height: 100%;
@@ -969,11 +1022,11 @@ def setup_page():
         }
         .hp-name { font-size: 0.66rem; font-weight: 600; color: var(--eiq-text-secondary); text-transform: uppercase; letter-spacing: 0.5px; }
         .hp-value { font-size: 0.88rem; font-weight: 700; font-family: 'JetBrains Mono', monospace; }
-        .hp-pts { font-size: 0.63rem; color: #9AA0AB; }
+        .hp-pts { font-size: 0.63rem; color: var(--eiq-text-secondary); }
 
         /* === INVESTMENT MEMO === */
         .memo-card {
-            background: #ffffff;
+            background: var(--eiq-surface);
             border: 1px solid var(--eiq-border);
             border-radius: 14px;
             padding: 28px;
@@ -995,9 +1048,9 @@ def setup_page():
             font-weight: 600;
             padding: 3px 10px;
             border-radius: 4px;
-            border: 1px solid #CDEFFA;
+            border: 1px solid var(--eiq-blue-pale-border);
         }
-        .memo-body { font-size: 0.85rem; color: #4A4E58; line-height: 1.75; }
+        .memo-body { font-size: 0.85rem; color: var(--eiq-text-secondary); line-height: 1.75; }
         .memo-section-title {
             font-size: 0.82rem;
             font-weight: 700;
@@ -1011,7 +1064,7 @@ def setup_page():
 
         /* === WATCHLIST-STYLE ROW CARDS (also reused by Screener's dividend calendar) === */
         .watchlist-card {
-            background: #ffffff;
+            background: var(--eiq-surface);
             border: 1px solid var(--eiq-border);
             border-radius: 14px;
             padding: 16px 22px;
@@ -1038,7 +1091,7 @@ def setup_page():
             font-family: 'JetBrains Mono', monospace;
         }
         .wl-company { font-size: 0.8rem; color: var(--eiq-text-secondary); }
-        .wl-note { font-size: 0.75rem; color: #9AA0AB; font-style: italic; margin-left: 6px; }
+        .wl-note { font-size: 0.75rem; color: var(--eiq-text-secondary); font-style: italic; margin-left: 6px; }
         .wl-right { text-align: right; }
         .wl-price {
             font-size: 1.25rem;
@@ -1060,7 +1113,7 @@ def setup_page():
 
         /* === NEWS RADAR CARDS === */
         .nr-card {
-            background: #ffffff;
+            background: var(--eiq-surface);
             border: 1px solid var(--eiq-border);
             border-radius: 14px;
             padding: 20px 22px;
@@ -1096,7 +1149,7 @@ def setup_page():
             display: inline-block;
             background: var(--eiq-blue-pale);
             color: var(--eiq-blue-hover);
-            border: 1px solid #CDEFFA;
+            border: 1px solid var(--eiq-blue-pale-border);
             padding: 3px 10px;
             border-radius: 5px;
             font-size: 0.65rem;
@@ -1112,11 +1165,11 @@ def setup_page():
             font-size: 0.65rem;
             font-weight: 500;
         }
-        .nr-source { font-size: 0.72rem; color: #9AA0AB; white-space: nowrap; }
+        .nr-source { font-size: 0.72rem; color: var(--eiq-text-secondary); white-space: nowrap; }
         .nr-headline { font-size: 0.92rem; font-weight: 700; color: var(--eiq-text); margin: 8px 0 6px; line-height: 1.4; }
         .nr-headline a { color: var(--eiq-text); text-decoration: none; }
         .nr-headline a:hover { color: var(--eiq-blue-hover); }
-        .nr-summary { font-size: 0.82rem; color: #4A4E58; line-height: 1.6; margin-bottom: 8px; }
+        .nr-summary { font-size: 0.82rem; color: var(--eiq-text-secondary); line-height: 1.6; margin-bottom: 8px; }
         .nr-reason {
             font-size: 0.8rem;
             color: var(--eiq-text-secondary);
@@ -1142,7 +1195,7 @@ def setup_page():
             display: inline-block;
             background: var(--eiq-blue-pale);
             color: var(--eiq-blue-hover);
-            border: 1px solid #CDEFFA;
+            border: 1px solid var(--eiq-blue-pale-border);
             padding: 3px 10px;
             border-radius: 6px;
             font-size: 0.73rem;
@@ -1158,7 +1211,7 @@ def setup_page():
 
         /* === NEWS RADAR SUMMARY PANEL === */
         .nr-summary-card {
-            background: #ffffff;
+            background: var(--eiq-surface);
             border: 2px solid;
             border-radius: 14px;
             padding: 20px;
@@ -1179,7 +1232,7 @@ def setup_page():
         }
         .nr-ai-summary {
             background: var(--eiq-blue-pale);
-            border: 1px solid #CDEFFA;
+            border: 1px solid var(--eiq-blue-pale-border);
             border-radius: 14px;
             padding: 20px 24px;
             margin: 16px 0 8px;
@@ -1196,6 +1249,123 @@ def setup_page():
             font-size: 0.88rem;
             color: var(--eiq-text);
             line-height: 1.7;
+        }
+
+        /* === SCREENER: header row === */
+        .sc-header-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 6px; }
+        .sc-header-actions { display: flex; }
+        .st-key-sc_header_actions div[data-testid="stHorizontalBlock"] { gap: 8px !important; }
+        .st-key-sc_reset .stButton > button, .st-key-sc_refresh .stButton > button, .st-key-sc_sidebar_toggle_wrap .stButton > button {
+            background: var(--eiq-surface) !important;
+            color: var(--eiq-text) !important;
+            border: 1px solid var(--eiq-border) !important;
+            height: 42px !important;
+        }
+        .st-key-sc_reset .stButton > button:hover, .st-key-sc_refresh .stButton > button:hover, .st-key-sc_sidebar_toggle_wrap .stButton > button:hover { border-color: var(--eiq-blue) !important; color: var(--eiq-blue-hover) !important; }
+        .st-key-sc_run .stButton > button { height: 42px !important; }
+        .sc-refresh-meta { font-size: 0.72rem; color: var(--eiq-text-secondary); margin-top: 4px; text-align: right; }
+
+        /* === SCREENER: market universe card === */
+        .sc-universe-card {
+            background: var(--eiq-surface);
+            border: 1px solid var(--eiq-border);
+            border-radius: 14px;
+            padding: 16px 18px;
+            margin-bottom: 16px;
+        }
+        .sc-universe-label { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: var(--eiq-text-secondary); margin-bottom: 10px; }
+        .st-key-sc_market_row div[data-testid="stHorizontalBlock"] { gap: 10px !important; }
+        .st-key-sc_market_row div[data-testid="stCheckbox"] label {
+            border: 1px solid var(--eiq-border) !important;
+            border-radius: 20px !important;
+            padding: 8px 16px !important;
+            background: var(--eiq-bg-alt);
+            transition: all 0.15s;
+            cursor: pointer;
+        }
+        .st-key-sc_market_row div[data-testid="stCheckbox"] label[data-selected="true"] {
+            background: var(--eiq-blue-pale) !important;
+            border-color: var(--eiq-blue) !important;
+        }
+        .st-key-sc_market_row div[data-testid="stCheckbox"] label p {
+            font-weight: 600 !important;
+            font-size: 0.85rem !important;
+            color: var(--eiq-text) !important;
+        }
+        .st-key-sc_market_row div[data-testid="stCheckbox"] label[data-selected="true"] p { color: var(--eiq-blue-hover) !important; }
+        .sc-universe-count { font-size: 0.82rem; color: var(--eiq-text-secondary); margin-top: 10px; }
+        .sc-universe-count b { color: var(--eiq-text); font-weight: 700; }
+
+        /* === SCREENER: filter sidebar === */
+        .st-key-sc_sidebar {
+            position: sticky;
+            top: 84px;
+            max-height: calc(100vh - 100px);
+            overflow-y: auto;
+            padding-right: 6px;
+        }
+        .sc-sidebar-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+        .sc-sidebar-title { font-size: 1rem; font-weight: 700; color: var(--eiq-text); display: flex; align-items: center; gap: 8px; }
+        .sc-active-badge {
+            background: var(--eiq-blue); color: #fff; font-size: 0.68rem; font-weight: 700;
+            border-radius: 10px; padding: 1px 8px; min-width: 18px; text-align: center;
+        }
+        .st-key-sc_clear_all .stButton > button {
+            background: transparent !important; border: none !important; color: var(--eiq-blue-hover) !important;
+            font-size: 0.78rem !important; height: auto !important; padding: 2px 4px !important;
+        }
+
+        /* === SCREENER: accordions (active count + summary in header) === */
+        .sc-accordion-badge {
+            display: inline-block; background: var(--eiq-blue-pale); color: var(--eiq-blue-hover);
+            font-size: 0.65rem; font-weight: 700; border-radius: 10px; padding: 1px 8px; margin-left: 8px;
+        }
+        .sc-accordion-summary { font-size: 0.72rem; color: var(--eiq-text-secondary); font-weight: 400; margin-top: 2px; }
+
+        /* === SCREENER: active-filter chips === */
+        .st-key-sc_active_chips div[data-testid="stVerticalBlock"] {
+            flex-direction: row !important; flex-wrap: wrap !important; gap: 8px !important;
+        }
+        .st-key-sc_active_chips div[data-testid="stElementContainer"] { width: auto !important; }
+        .st-key-sc_active_chips .stButton > button {
+            background: var(--eiq-blue-pale) !important;
+            color: var(--eiq-blue-hover) !important;
+            border: 1px solid var(--eiq-blue-pale-border) !important;
+            border-radius: 20px !important;
+            padding: 5px 14px !important;
+            height: auto !important;
+            font-size: 0.76rem !important;
+            font-weight: 600 !important;
+        }
+        .st-key-sc_active_chips .stButton > button:hover { background: var(--eiq-negative-bg) !important; color: var(--eiq-negative) !important; border-color: var(--eiq-negative-border) !important; }
+
+        /* === SCREENER: compact summary cards === */
+        .sc-summary-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 14px 0 20px; }
+        .sc-summary-card {
+            background: var(--eiq-surface); border: 1px solid var(--eiq-border); border-radius: 12px;
+            padding: 14px 16px; display: flex; align-items: center; gap: 12px;
+        }
+        .sc-summary-icon {
+            width: 34px; height: 34px; border-radius: 9px; background: var(--eiq-blue-pale);
+            color: var(--eiq-blue-hover); display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+        }
+        .sc-summary-label { font-size: 0.68rem; color: var(--eiq-text-secondary); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; }
+        .sc-summary-value { font-size: 1.35rem; font-weight: 800; color: var(--eiq-text); font-family: 'JetBrains Mono', monospace; line-height: 1.2; }
+        .sc-summary-help { font-size: 0.7rem; color: var(--eiq-text-secondary); }
+
+        /* === SCREENER: results toolbar === */
+        .st-key-sc_toolbar div[data-testid="stHorizontalBlock"] { align-items: center; gap: 10px !important; }
+
+        /* === SCREENER: exchange badge in company cell context (dividend calendar etc.) === */
+        .sc-exch-badge {
+            display: inline-block; font-size: 0.62rem; font-weight: 700; padding: 1px 6px; border-radius: 4px;
+            background: var(--eiq-bg-alt); color: var(--eiq-text-secondary); border: 1px solid var(--eiq-border);
+            margin-left: 6px; vertical-align: middle;
+        }
+
+        @media (max-width: 1024px) {
+            .sc-summary-row { grid-template-columns: repeat(2, 1fr); }
+            .st-key-sc_sidebar { position: static; max-height: none; }
         }
 
         /* === RESPONSIVE === */

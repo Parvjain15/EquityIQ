@@ -9,7 +9,9 @@ from news_radar import NewsRadarAnalyzer, SECTOR_TICKERS, IMPACT_CATEGORIES
 from screener import (
     fetch_sp500_tickers, get_all_tickers, fetch_screener_data,
     compute_health_score as screener_health_score,
-    get_upcoming_dividends,
+    get_upcoming_dividends, get_company_directory,
+    get_usd_inr_rate, convert_market_cap,
+    enrich_dividends_finnhub, fetch_nse_dividend_calendar,
 )
 from utils import (
     setup_page, format_number, currency_symbol,
@@ -37,6 +39,44 @@ def safe_num(val, default=0):
         return float(val)
     except (ValueError, TypeError):
         return default
+
+
+def _chart_theme():
+    """Plotly layout colors matching the current light/dark theme, so charts
+    don't stay hardcoded white when the rest of the app switches to dark."""
+    if st.session_state.get("dark_mode", False):
+        return dict(
+            template="plotly_dark",
+            paper_bgcolor="#171B22", plot_bgcolor="#171B22",
+            font_color="#F2F4F7", grid_color="#262B34",
+        )
+    return dict(
+        template="plotly_white",
+        paper_bgcolor="#FFFFFF", plot_bgcolor="#FFFFFF",
+        font_color="#44475b", grid_color="#f0f0f2",
+    )
+
+
+_TICKER_SEP = " — "
+
+
+def _company_search_options():
+    """'Company Name — TICKER' options for the searchable ticker widgets, so
+    typing a company name (e.g. "apple") surfaces its ticker without the user
+    needing to already know the symbol."""
+    return [f"{row['name']}{_TICKER_SEP}{row['ticker']}" for row in get_company_directory()]
+
+
+def _resolve_ticker_input(raw):
+    """Extracts a ticker from either a 'Company Name — TICKER' selection or a
+    raw ticker typed directly (accept_new_options lets users bypass the list
+    entirely for symbols outside the curated S&P 500 / Nifty 100 directory)."""
+    raw = (raw or "").strip()
+    if _TICKER_SEP in raw:
+        candidate = raw.rsplit(_TICKER_SEP, 1)[-1].strip()
+        if candidate:
+            return candidate.upper()
+    return raw.upper()
 
 
 def _render_news_card(article, highlight=False):
@@ -222,10 +262,11 @@ def display_results(metrics, valuation, analyzer, api_key=""):
         marker=dict(color=colors, line=dict(color='rgba(255,255,255,0.05)', width=1)),
         hovertemplate='%{x}<br>' + sym + '%{y:,.0f}<extra></extra>'
     )])
+    ct = _chart_theme()
     fig.update_layout(
-        template="plotly_white", paper_bgcolor='#ffffff', plot_bgcolor='#ffffff',
-        font=dict(family="Inter", size=13, color="#44475b"),
-        xaxis=dict(gridcolor='#f0f0f2'), yaxis=dict(gridcolor='#f0f0f2'),
+        template=ct["template"], paper_bgcolor=ct["paper_bgcolor"], plot_bgcolor=ct["plot_bgcolor"],
+        font=dict(family="Inter", size=13, color=ct["font_color"]),
+        xaxis=dict(gridcolor=ct["grid_color"]), yaxis=dict(gridcolor=ct["grid_color"]),
         margin=dict(l=20, r=20, t=20, b=40), height=350, hovermode="x unified"
     )
     st.plotly_chart(fig, width="stretch")
@@ -373,6 +414,11 @@ def _navigate(page_key: str):
     st.rerun()
 
 
+def _toggle_theme():
+    st.session_state.dark_mode = not st.session_state.dark_mode
+    st.rerun()
+
+
 def _render_topbar(current_page: str):
     nav_items = [
         ("ticker",       "Stocks"),
@@ -384,8 +430,8 @@ def _render_topbar(current_page: str):
     ]
 
     with st.container(key="topbar"):
-        logo_col, nav_col, login_col, cta_col, burger_col = st.columns(
-            [2.2, 5.2, 0.9, 1.5, 0.5], vertical_alignment="center"
+        logo_col, nav_col, login_col, theme_col, cta_col, burger_col = st.columns(
+            [2.2, 5.0, 0.9, 0.6, 1.5, 0.5], vertical_alignment="center"
         )
 
         with logo_col:
@@ -406,6 +452,12 @@ def _render_topbar(current_page: str):
             with st.container(key="topbar_login"):
                 if st.button("Log in", key="nav_login", type="tertiary"):
                     st.toast("Login is coming soon — EquityIQ is currently open access.", icon="🔒")
+
+        with theme_col:
+            with st.container(key="topbar_theme"):
+                icon = "☀️" if st.session_state.dark_mode else "🌙"
+                if st.button(icon, key="nav_theme", type="tertiary", help="Switch to light theme" if st.session_state.dark_mode else "Switch to dark theme"):
+                    _toggle_theme()
 
         with cta_col:
             with st.container(key="topbar_cta"):
@@ -850,27 +902,31 @@ def render_pdf_page(api_key):
 
 def render_ticker_page(api_key):
     st.markdown('<div class="page-title">Stock Lookup</div>', unsafe_allow_html=True)
-    st.markdown('<div class="page-sub">Enter any stock ticker to pull live financial data, health score &amp; valuation.</div>', unsafe_allow_html=True)
+    st.markdown('<div class="page-sub">Search by company name or ticker to pull live financial data, health score &amp; valuation.</div>', unsafe_allow_html=True)
 
     col_input, col_btn = st.columns([3, 1])
     with col_input:
-        ticker_input = st.text_input(
+        ticker_input = st.selectbox(
             "Stock Ticker",
-            placeholder="e.g.  AAPL,  TSLA,  RELIANCE.NS",
+            options=_company_search_options(),
+            index=None,
+            accept_new_options=True,
+            placeholder="Type a company name (e.g. Apple, Reliance) or a ticker",
             label_visibility="collapsed",
+            key="ticker_search",
         )
     with col_btn:
         ticker_go = st.button("🔍 Analyze", key="ticker_btn")
 
     st.markdown("""
     <div class="supported-docs">
-        Examples: <span>AAPL</span> <span>TSLA</span> <span>GOOGL</span>
-        <span>MSFT</span> <span>RELIANCE.NS</span> <span>TCS.NS</span> <span>INFY.NS</span>
+        Examples: <span>Apple</span> <span>Tesla</span> <span>Google</span>
+        <span>Microsoft</span> <span>Reliance</span> <span>TCS</span> <span>Infosys</span>
     </div>
     """, unsafe_allow_html=True)
 
     if ticker_go and ticker_input:
-        ticker_clean = ticker_input.strip().upper()
+        ticker_clean = _resolve_ticker_input(ticker_input)
         dummy_key    = api_key if api_key else "ticker-mode"
         try:
             analyzer = FinancialAnalyzer(dummy_key)
@@ -909,13 +965,17 @@ def render_compare_page(api_key):
     if "compare_count" not in st.session_state:
         st.session_state.compare_count = 2
 
+    compare_options = _company_search_options()
     input_cols   = st.columns(list([3] * st.session_state.compare_count) + [1])
     ticker_values = []
     for i in range(st.session_state.compare_count):
         with input_cols[i]:
-            val = st.text_input(
+            val = st.selectbox(
                 f"Stock {i+1}",
-                placeholder=f"e.g. {'AAPL' if i == 0 else 'MSFT' if i == 1 else 'GOOGL'}",
+                options=compare_options,
+                index=None,
+                accept_new_options=True,
+                placeholder=f"e.g. {'Apple' if i == 0 else 'Microsoft' if i == 1 else 'Google'}",
                 key=f"cmp_{i}",
             )
             ticker_values.append(val)
@@ -936,13 +996,13 @@ def render_compare_page(api_key):
 
     st.markdown("""
     <div class="supported-docs">
-        US: <span>AAPL</span> <span>MSFT</span> <span>TSLA</span>
-        India: <span>RELIANCE.NS</span> <span>TCS.NS</span> <span>INFY.NS</span>
+        US: <span>Apple</span> <span>Microsoft</span> <span>Tesla</span>
+        India: <span>Reliance</span> <span>TCS</span> <span>Infosys</span>
     </div>
     """, unsafe_allow_html=True)
 
     if compare_go:
-        tickers = [t.strip().upper() for t in ticker_values if t and t.strip()]
+        tickers = [_resolve_ticker_input(t) for t in ticker_values if t and str(t).strip()]
         if len(tickers) < 2:
             st.warning("Please enter at least 2 tickers to compare.")
         else:
@@ -1035,13 +1095,14 @@ def render_compare_page(api_key):
                             hovertemplate='%{x}<br>' + trace_sym + '%{y:,.0f}<extra>' + d["ticker"] + '</extra>'
                         ))
 
+                    ct = _chart_theme()
                     fig.update_layout(
-                        barmode='group', template="plotly_white",
-                        paper_bgcolor='#ffffff', plot_bgcolor='#ffffff',
-                        font=dict(family="Inter", size=13, color="#44475b"),
-                        xaxis=dict(gridcolor='#f0f0f2'), yaxis=dict(gridcolor='#f0f0f2'),
+                        barmode='group', template=ct["template"],
+                        paper_bgcolor=ct["paper_bgcolor"], plot_bgcolor=ct["plot_bgcolor"],
+                        font=dict(family="Inter", size=13, color=ct["font_color"]),
+                        xaxis=dict(gridcolor=ct["grid_color"]), yaxis=dict(gridcolor=ct["grid_color"]),
                         margin=dict(l=20, r=20, t=20, b=40), height=400,
-                        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5, font=dict(color='#44475b')),
+                        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5, font=dict(color=ct["font_color"])),
                         hovermode="x unified"
                     )
                     st.plotly_chart(fig, width="stretch")
@@ -1196,13 +1257,14 @@ def render_quarterly_page(api_key):
                             marker=dict(size=8),
                             hovertemplate=f'{display_label}<br>%{{x}}: {q_sym}%{{y:,.0f}}<extra></extra>'
                         ))
+                    ct = _chart_theme()
                     fig_trend.update_layout(
-                        template="plotly_white", paper_bgcolor='#ffffff', plot_bgcolor='#ffffff',
-                        font=dict(family="Inter", size=13, color="#44475b"),
-                        xaxis=dict(gridcolor='#f0f0f2', title="Quarter"),
-                        yaxis=dict(gridcolor='#f0f0f2', title=f"Value ({q_sym})"),
+                        template=ct["template"], paper_bgcolor=ct["paper_bgcolor"], plot_bgcolor=ct["plot_bgcolor"],
+                        font=dict(family="Inter", size=13, color=ct["font_color"]),
+                        xaxis=dict(gridcolor=ct["grid_color"], title="Quarter"),
+                        yaxis=dict(gridcolor=ct["grid_color"], title=f"Value ({q_sym})"),
                         margin=dict(l=20, r=20, t=20, b=40), height=400,
-                        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5, font=dict(color='#44475b')),
+                        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5, font=dict(color=ct["font_color"])),
                         hovermode="x unified"
                     )
                     st.plotly_chart(fig_trend, use_container_width=True)
@@ -1223,14 +1285,15 @@ def render_quarterly_page(api_key):
                                 marker_color=growth_colors[idx],
                                 hovertemplate=f'{display_label}<br>%{{x}}: %{{y:+.1f}}%<extra></extra>'
                             ))
+                        ct = _chart_theme()
                         fig_growth.update_layout(
-                            barmode='group', template="plotly_white",
-                            paper_bgcolor='#ffffff', plot_bgcolor='#ffffff',
-                            font=dict(family="Inter", size=13, color="#44475b"),
-                            xaxis=dict(gridcolor='#f0f0f2', title="Quarter"),
-                            yaxis=dict(gridcolor='#f0f0f2', title="Growth %", zeroline=True, zerolinecolor='#e8e8eb'),
+                            barmode='group', template=ct["template"],
+                            paper_bgcolor=ct["paper_bgcolor"], plot_bgcolor=ct["plot_bgcolor"],
+                            font=dict(family="Inter", size=13, color=ct["font_color"]),
+                            xaxis=dict(gridcolor=ct["grid_color"], title="Quarter"),
+                            yaxis=dict(gridcolor=ct["grid_color"], title="Growth %", zeroline=True, zerolinecolor=ct["grid_color"]),
                             margin=dict(l=20, r=20, t=20, b=40), height=380,
-                            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5, font=dict(color='#44475b')),
+                            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5, font=dict(color=ct["font_color"])),
                             hovermode="x unified"
                         )
                         st.plotly_chart(fig_growth, use_container_width=True)
@@ -1360,13 +1423,22 @@ def render_news_radar_page(api_key):
     st.markdown('<div class="section-head" style="margin-top:20px;">Or Search a Ticker / Sector</div>', unsafe_allow_html=True)
 
     nr_c1, nr_c2, nr_c3 = st.columns([4, 2, 1])
-    with nr_c1:
-        nr_query = st.text_input(
-            "Search", placeholder="e.g. NVDA · TSLA · Semiconductors · Banking · EV & Clean Energy",
-            key="nr_query", label_visibility="collapsed",
-        )
     with nr_c2:
         nr_type = st.selectbox("Type", ["Ticker", "Sector"], key="nr_type", label_visibility="collapsed")
+    with nr_c1:
+        if nr_type == "Ticker":
+            nr_query_sel = st.selectbox(
+                "Search", options=_company_search_options(), index=None,
+                accept_new_options=True,
+                placeholder="e.g. NVDA, Apple, Tesla, TCS...",
+                key="nr_query_ticker", label_visibility="collapsed",
+            )
+            nr_query = _resolve_ticker_input(nr_query_sel) if nr_query_sel else ""
+        else:
+            nr_query = st.text_input(
+                "Search", placeholder="e.g. Semiconductors · Banking · EV & Clean Energy",
+                key="nr_query_sector", label_visibility="collapsed",
+            )
     with nr_c3:
         nr_search_btn = st.button("🔍 Search", key="nr_search_btn")
 
@@ -1389,7 +1461,7 @@ def render_news_radar_page(api_key):
 
     st.markdown("""
     <div class="supported-docs">
-        Tickers: <span>NVDA</span> <span>TSLA</span> <span>AAPL</span> <span>MSFT</span> <span>TCS.NS</span>
+        Tickers: <span>NVIDIA</span> <span>Tesla</span> <span>Apple</span> <span>Microsoft</span> <span>TCS</span>
         &nbsp;·&nbsp; Sectors: <span>Semiconductors</span> <span>Banking</span>
         <span>EV &amp; Clean Energy</span> <span>Healthcare</span> <span>Indian Markets</span>
     </div>
@@ -1522,35 +1594,324 @@ def _mcap_label(val, sym="$"):
     return f"{sym}{val:,.0f}"
 
 
+# ── Screener filter metadata — single source of truth for every filter's
+#    session-state key, widget kind, default value and category. Drives Reset,
+#    active-filter counts, the accordion summaries and the removable chip row.
+#    Every key/default matches the original implementation exactly — nothing
+#    renamed, removed or duplicated across categories. ──────────────────────
+_SC_FILTER_META = {
+    "f_mc":           {"kind": "range",    "label": "Market Cap",           "default": (0.0, 3000.0),  "unit": "Bn", "category": "market"},
+    "f_sec":          {"kind": "multi",    "label": "Sector",               "default": [],              "category": "market"},
+    "f_cty":          {"kind": "multi",    "label": "Country",              "default": [],              "category": "market"},
+    "f_pe":           {"kind": "range",    "label": "P/E",                  "default": (0.0, 100.0),   "unit": "x", "category": "valuation"},
+    "f_pb":           {"kind": "range",    "label": "P/B",                  "default": (0.0, 25.0),    "unit": "x", "category": "valuation"},
+    "f_ps":           {"kind": "range",    "label": "P/S",                  "default": (0.0, 25.0),    "unit": "x", "category": "valuation"},
+    "f_div":          {"kind": "range",    "label": "Dividend Yield",       "default": (0.0, 15.0),    "unit": "%", "category": "valuation"},
+    "f_roe":          {"kind": "range",    "label": "ROE",                  "default": (-30.0, 100.0), "unit": "%", "category": "quality"},
+    "f_roa":          {"kind": "range",    "label": "ROA",                  "default": (-20.0, 50.0),  "unit": "%", "category": "quality"},
+    "f_pm":           {"kind": "range",    "label": "Profit Margin",        "default": (-50.0, 80.0),  "unit": "%", "category": "quality"},
+    "f_fcf":          {"kind": "bool",     "label": "Positive FCF only",    "default": False,           "category": "quality"},
+    "f_rg":           {"kind": "range",    "label": "Revenue Growth",       "default": (-50.0, 100.0), "unit": "%", "category": "growth"},
+    "f_eg":           {"kind": "range",    "label": "Earnings Growth",      "default": (-50.0, 100.0), "unit": "%", "category": "growth"},
+    "f_de":           {"kind": "range",    "label": "Debt/Equity",          "default": (0.0, 5.0),     "unit": "x", "category": "risk"},
+    "f_cr":           {"kind": "range",    "label": "Current Ratio",        "default": (0.0, 5.0),     "unit": "x", "category": "risk"},
+    "f_beta":         {"kind": "range",    "label": "Beta",                 "default": (-1.0, 4.0),    "unit": "",  "category": "risk"},
+    "f_only_div":     {"kind": "bool",     "label": "Dividend payers only", "default": False,           "category": "dividend"},
+    "f_upcoming_div": {"kind": "bool",     "label": "Upcoming ex-dividend", "default": False,           "category": "dividend"},
+    "f_min_yield":    {"kind": "min_only", "label": "Min Dividend Yield",   "default": 0.0,    "unit": "%", "category": "dividend"},
+    "f_payout":       {"kind": "max_only", "label": "Max Payout Ratio",     "default": 200.0,  "unit": "%", "category": "dividend"},
+    "f_analyst":      {"kind": "multi",    "label": "Analyst Rating",       "default": [],               "category": "analyst"},
+    "f_has_target":   {"kind": "bool",     "label": "Has target price",     "default": False,            "category": "analyst"},
+    "f_min_analysts": {"kind": "min_only", "label": "Min analyst opinions", "default": 0,       "unit": "", "category": "analyst"},
+}
+
+_SC_CATEGORIES = [
+    ("market",    "Market",    "public"),
+    ("valuation", "Valuation", "monitoring"),
+    ("quality",   "Quality",   "verified"),
+    ("growth",    "Growth",    "trending_up"),
+    ("risk",      "Risk",      "warning"),
+    ("dividend",  "Dividend",  "payments"),
+    ("analyst",   "Analyst",   "groups"),
+]
+
+_SC_KEYWORDS = {
+    "market":    ["market cap", "sector", "country", "market", "currency"],
+    "valuation": ["p/e", "pe ratio", "p/b", "pb ratio", "p/s", "ps ratio", "valuation", "dividend yield"],
+    "quality":   ["roe", "roa", "profit margin", "quality", "free cash flow", "fcf", "health"],
+    "growth":    ["revenue growth", "earnings growth", "growth"],
+    "risk":      ["debt", "equity", "current ratio", "beta", "risk"],
+    "dividend":  ["dividend", "yield", "payout", "ex-dividend"],
+    "analyst":   ["analyst", "rating", "target price", "buy", "sell", "hold"],
+}
+
+
+def _sc_is_active(key):
+    m = _SC_FILTER_META[key]
+    return st.session_state.get(key, m["default"]) != m["default"]
+
+
+def _sc_phrase(key):
+    m = _SC_FILTER_META[key]
+    if not _sc_is_active(key):
+        return ""
+    cur = st.session_state.get(key, m["default"])
+    kind, label, unit = m["kind"], m["label"], m.get("unit", "")
+    if kind == "range":
+        lo_d, hi_d = m["default"]
+        lo, hi = cur
+        if lo != lo_d and hi != hi_d:
+            return f"{label} {lo:g}–{hi:g}{unit}"
+        if hi != hi_d:
+            return f"{label} below {hi:g}{unit}"
+        return f"{label} above {lo:g}{unit}"
+    if kind == "min_only":
+        return f"{label} above {cur:g}{unit}"
+    if kind == "max_only":
+        return f"{label} below {cur:g}{unit}"
+    if kind == "bool":
+        return label
+    if kind == "multi":
+        vals = [str(c).replace("_", " ").title() for c in cur]
+        if len(vals) <= 2:
+            return f"{label}: {', '.join(vals)}"
+        return f"{label}: {len(vals)} selected"
+    return label
+
+
+def _sc_category_active_count(cat):
+    return sum(1 for k, m in _SC_FILTER_META.items() if m["category"] == cat and _sc_is_active(k))
+
+
+def _sc_category_summary(cat):
+    phrases = [_sc_phrase(k) for k, m in _SC_FILTER_META.items() if m["category"] == cat]
+    return " · ".join(p for p in phrases if p)
+
+
+def _sc_reset_all():
+    """Reset-to-defaults, used exclusively as an on_click callback (never called
+    inline). Callbacks run *before* the script body re-executes and re-creates
+    the filter widgets, so writing to their session-state keys here is safe —
+    doing the same thing inline, after those widgets have already rendered
+    this run, raises StreamlitAPIException. Streamlit reruns automatically
+    after an on_click callback, so no explicit st.rerun() is needed or wanted."""
+    for k, m in _SC_FILTER_META.items():
+        st.session_state[k] = m["default"]
+    for k in ("f_mc_min_input", "f_mc_max_input", "sc_search", "sc_filter_search", "f_currency", "f_currency_prev"):
+        st.session_state.pop(k, None)
+
+
+def _sc_clear_one(key):
+    """Clears a single filter — on_click callback only (see _sc_reset_all)."""
+    st.session_state[key] = _SC_FILTER_META[key]["default"]
+    if key == "f_mc":
+        st.session_state.pop("f_mc_min_input", None)
+        st.session_state.pop("f_mc_max_input", None)
+
+
+def _sc_select_all_sectors(all_sectors):
+    st.session_state["f_sec"] = all_sectors
+
+
+def _sc_clear_sectors():
+    st.session_state["f_sec"] = []
+
+
+def _render_sc_filters(stocks, search_text=""):
+    """Renders the 7 filter accordions. Called from either the sidebar column
+    or the collapsed-sidebar popover — same widgets, same session-state keys,
+    either way, so filtering logic downstream never needs to know which."""
+    fx_rate = get_usd_inr_rate()
+    prev_currency = st.session_state.get("f_currency_prev", "USD")
+    cur_currency  = st.session_state.get("f_currency", "USD")
+    if cur_currency != prev_currency:
+        factor = fx_rate if cur_currency == "INR" else (1.0 / fx_rate)
+        old_lo, old_hi = st.session_state.get("f_mc", (0.0, 3000.0))
+        st.session_state["f_mc"] = (old_lo * factor, old_hi * factor)
+        st.session_state.pop("f_mc_min_input", None)
+        st.session_state.pop("f_mc_max_input", None)
+        st.session_state["f_currency_prev"] = cur_currency
+
+    mc_bound = round(3000.0 * (fx_rate if cur_currency == "INR" else 1.0), -1)
+    mc_step  = round(10.0 * (fx_rate if cur_currency == "INR" else 1.0), 1) or 1.0
+    mc_sym   = "₹" if cur_currency == "INR" else "$"
+
+    q = (search_text or "").strip().lower()
+
+    for cat_key, cat_label, icon in _SC_CATEGORIES:
+        if q and q not in cat_label.lower() and not any(q in kw for kw in _SC_KEYWORDS.get(cat_key, [])):
+            continue
+
+        n_active = _sc_category_active_count(cat_key)
+        summary  = _sc_category_summary(cat_key)
+        label = cat_label
+        if n_active:
+            label += f" · {n_active} active"
+        if summary:
+            label += f"  —  {summary}"
+
+        with st.expander(label, icon=f":material/{icon}:", expanded=bool(q)):
+            if cat_key == "market":
+                st.selectbox(
+                    "Market Cap currency", ["USD", "INR"], key="f_currency",
+                    help="Converts every stock's market cap into this currency so the filter below "
+                         "compares US and Indian companies on one consistent scale.",
+                )
+                cur_mc = st.session_state.get("f_mc", (0.0, mc_bound))
+                st.session_state.setdefault("f_mc_min_input", float(min(max(cur_mc[0], 0.0), mc_bound)))
+                st.session_state.setdefault("f_mc_max_input", float(min(max(cur_mc[1], 0.0), mc_bound)))
+
+                def _sc_mc_from_inputs():
+                    lo = st.session_state.get("f_mc_min_input", 0.0)
+                    hi = st.session_state.get("f_mc_max_input", 0.0)
+                    st.session_state["f_mc"] = (min(lo, hi), max(lo, hi))
+
+                def _sc_mc_from_slider():
+                    lo, hi = st.session_state.get("f_mc", (0.0, mc_bound))
+                    st.session_state["f_mc_min_input"] = lo
+                    st.session_state["f_mc_max_input"] = hi
+
+                nc1, nc2 = st.columns(2)
+                with nc1:
+                    st.number_input(
+                        f"Min ({mc_sym}Bn)", min_value=0.0, max_value=mc_bound,
+                        step=mc_step, key="f_mc_min_input", on_change=_sc_mc_from_inputs,
+                    )
+                with nc2:
+                    st.number_input(
+                        f"Max ({mc_sym}Bn)", min_value=0.0, max_value=mc_bound,
+                        step=mc_step, key="f_mc_max_input", on_change=_sc_mc_from_inputs,
+                    )
+                # Widgets sync each other via on_change callbacks (which run *before* the
+                # script re-executes) rather than writing to session_state after the fact —
+                # Streamlit forbids modifying a widget's state once it's been instantiated
+                # in the same run, so post-hoc syncing here would raise StreamlitAPIException.
+                mc_range = st.slider(
+                    f"Market Cap ({mc_sym}Bn)", 0.0, mc_bound,
+                    value=st.session_state.get("f_mc", (0.0, mc_bound)), step=mc_step,
+                    key="f_mc", on_change=_sc_mc_from_slider,
+                )
+
+                all_sectors   = sorted({d.get("sector", "") for d in stocks if d.get("sector")})
+                all_countries = sorted({d.get("country", "") for d in stocks if d.get("country")})
+                st.multiselect("Sector", all_sectors, key="f_sec")
+                bsel, bclr = st.columns(2)
+                with bsel:
+                    st.button(
+                        "Select all sectors", key="f_sec_all", width="stretch",
+                        on_click=_sc_select_all_sectors, args=(all_sectors,),
+                    )
+                with bclr:
+                    st.button("Clear sectors", key="f_sec_clr", width="stretch", on_click=_sc_clear_sectors)
+                st.multiselect("Country", all_countries, key="f_cty")
+
+            elif cat_key == "valuation":
+                st.slider("P/E Ratio", 0.0, 100.0, (0.0, 100.0), 1.0, key="f_pe",
+                          help="Price-to-Earnings — years of current earnings to pay back the share price.")
+                st.slider("P/B Ratio", 0.0, 25.0, (0.0, 25.0), 0.5, key="f_pb",
+                          help="Price-to-Book — share price relative to book value per share.")
+                st.slider("P/S Ratio", 0.0, 25.0, (0.0, 25.0), 0.5, key="f_ps",
+                          help="Price-to-Sales — market cap relative to annual revenue.")
+                st.slider("Dividend Yield (%)", 0.0, 15.0, (0.0, 15.0), 0.25, key="f_div",
+                          help="Annual dividend as a percentage of share price.")
+
+            elif cat_key == "quality":
+                st.slider("ROE (%)", -30.0, 100.0, (-30.0, 100.0), 1.0, key="f_roe",
+                          help="Return on Equity — net income as a percentage of shareholder equity.")
+                st.slider("ROA (%)", -20.0, 50.0, (-20.0, 50.0), 1.0, key="f_roa",
+                          help="Return on Assets — net income as a percentage of total assets.")
+                st.slider("Profit Margin (%)", -50.0, 80.0, (-50.0, 80.0), 1.0, key="f_pm")
+                st.checkbox("Positive Free Cash Flow only", key="f_fcf")
+                st.caption("EquityIQ Health Score (0–100, A–F) is a sortable column in the results table below.")
+
+            elif cat_key == "growth":
+                st.slider("Revenue Growth (%)", -50.0, 100.0, (-50.0, 100.0), 1.0, key="f_rg")
+                st.slider("Earnings Growth (%)", -50.0, 100.0, (-50.0, 100.0), 1.0, key="f_eg")
+
+            elif cat_key == "risk":
+                st.slider("Debt / Equity", 0.0, 5.0, (0.0, 5.0), 0.1, key="f_de")
+                st.slider("Current Ratio", 0.0, 5.0, (0.0, 5.0), 0.1, key="f_cr")
+                st.slider("Beta", -1.0, 4.0, (-1.0, 4.0), 0.1, key="f_beta")
+
+            elif cat_key == "dividend":
+                st.checkbox("Dividend payers only", key="f_only_div")
+                st.checkbox("Upcoming ex-dividend (next 60 days)", key="f_upcoming_div")
+                st.slider("Min Dividend Yield (%)", 0.0, 10.0, 0.0, 0.25, key="f_min_yield")
+                st.slider("Max Payout Ratio (%)", 0.0, 200.0, 200.0, 5.0, key="f_payout")
+
+            elif cat_key == "analyst":
+                st.multiselect(
+                    "Analyst Rating", ["strong_buy", "buy", "hold", "underperform", "sell"],
+                    key="f_analyst", format_func=lambda v: v.replace("_", " ").title(),
+                )
+                st.checkbox("Has analyst target price", key="f_has_target")
+                st.slider("Min analyst opinions", 0, 50, 0, 1, key="f_min_analysts")
+
+
 def render_screener_page(_api_key):
-    st.markdown('<div class="page-title">Stock Screener</div>', unsafe_allow_html=True)
-    st.markdown('<div class="page-sub">Screen the full S&amp;P 500 (US) and Nifty 50 + Next 50 (India) — 550+ stocks with live fundamental data.</div>', unsafe_allow_html=True)
+    import datetime as _dt
+    import pandas as pd
 
-    mk1, mk2, _ = st.columns([2, 2, 6])
-    with mk1:
-        include_us = st.checkbox("S&P 500 · US", value=True, key="sc_us")
-    with mk2:
-        include_india = st.checkbox("Nifty 100 · India", value=True, key="sc_india")
+    st.session_state.setdefault("sc_sidebar_open", True)
 
-    all_tickers = get_all_tickers(include_us, include_india)
-    st.markdown(
-        f'<div style="color:#64748b;font-size:0.82rem;margin:4px 0 12px;">'
-        f'<b>{len(all_tickers)} tickers</b> selected — '
-        f'S&amp;P 500 list refreshes daily from Wikipedia · '
-        f'Indian list: Nifty 50 + Nifty Next 50'
-        f'</div>',
-        unsafe_allow_html=True,
-    )
+    header_l, header_r = st.columns([1.6, 2], vertical_alignment="bottom")
+    with header_l:
+        st.markdown('<div class="page-title">Stock Screener</div>', unsafe_allow_html=True)
+        st.markdown('<div class="page-sub">Discover companies matching your investment criteria across US and Indian markets.</div>', unsafe_allow_html=True)
+    with header_r:
+        with st.container(key="sc_header_actions"):
+            hb1, hb2, hb3, hb4 = st.columns(4)
+            with hb1:
+                with st.container(key="sc_reset"):
+                    if st.button("Reset", key="sc_reset_btn", icon=":material/restart_alt:", width="stretch"):
+                        _sc_reset_all()
+            with hb2:
+                sidebar_label = "Hide filters" if st.session_state.sc_sidebar_open else "Show filters"
+                with st.container(key="sc_sidebar_toggle_wrap"):
+                    if st.button(sidebar_label, key="sc_sidebar_toggle", icon=":material/tune:", width="stretch"):
+                        # No st.rerun() here on purpose: this button sits *before* the
+                        # sc_us/sc_india checkboxes in the script. Calling st.rerun() here
+                        # interrupts the run before those widgets are instantiated this
+                        # pass, which made Streamlit treat them as orphaned and reset them
+                        # to their value= default on the next run. Letting the script
+                        # continue naturally (it already reruns because the button was
+                        # clicked) avoids that entirely.
+                        st.session_state.sc_sidebar_open = not st.session_state.sc_sidebar_open
+            with hb3:
+                refresh_clicked = False
+                with st.container(key="sc_refresh"):
+                    if st.session_state.get("screener_results"):
+                        refresh_clicked = st.button(
+                            "Refresh", key="sc_refresh_btn", icon=":material/refresh:", width="stretch",
+                            help="Clear cache and re-fetch fresh data",
+                        )
+            with hb4:
+                with st.container(key="sc_run"):
+                    scan_btn = st.button("Run Screen", key="sc_scan", type="primary", icon=":material/search:", width="stretch")
+            if st.session_state.get("screener_fetched_at"):
+                st.markdown(f'<div class="sc-refresh-meta">Last refreshed {st.session_state["screener_fetched_at"]}</div>', unsafe_allow_html=True)
 
-    btn_col, refresh_col, _ = st.columns([2, 2, 6])
-    with btn_col:
-        scan_btn = st.button("🔍 Screen Stocks", key="sc_scan")
-    with refresh_col:
-        if st.session_state.get("screener_results"):
-            if st.button("🔄 Refresh Data", key="sc_refresh", help="Clear cache and re-fetch fresh data"):
-                fetch_screener_data.clear()
-                st.session_state.pop("screener_results", None)
-                st.rerun()
+    # ── Market universe ──────────────────────────────────────────────────────
+    with st.container(key="sc_market_row"):
+        st.markdown('<div class="sc-universe-card"><div class="sc-universe-label">Market Universe</div>', unsafe_allow_html=True)
+        um1, um2 = st.columns([1, 1])
+        with um1:
+            include_us = st.checkbox("S&P 500 · US", value=True, key="sc_us")
+        with um2:
+            include_india = st.checkbox("Nifty 100 · India", value=True, key="sc_india")
+        all_tickers = get_all_tickers(include_us, include_india)
+        st.markdown(
+            f'<div class="sc-universe-count"><b>{len(all_tickers)} companies</b> selected '
+            f'<span class="info-tooltip">ⓘ<span class="info-tooltip-text">'
+            f'S&amp;P 500 list refreshes daily from Wikipedia. Indian list covers Nifty 50 + Nifty Next 50 (Nifty 100).'
+            f'</span></span></div></div>',
+            unsafe_allow_html=True,
+        )
+
+    if refresh_clicked:
+        fetch_screener_data.clear()
+        st.session_state.pop("screener_results", None)
+        st.rerun()
 
     if scan_btn:
         with st.spinner(f"Fetching live data for {len(all_tickers)} stocks — first run takes ~60–90 s, then cached 15 min…"):
@@ -1561,330 +1922,428 @@ def render_screener_page(_api_key):
             d["health_grade"] = gr
             d["health_color"] = cl
         st.session_state["screener_results"] = raw
+        st.session_state["screener_fetched_at"] = _dt.datetime.now().strftime("%I:%M %p").lstrip("0")
 
     stocks = st.session_state.get("screener_results", [])
     if not stocks:
         st.markdown("""
-        <div style="text-align:center;padding:60px 0;color:#7c7e8c;">
-            <div style="font-size:2.5rem;margin-bottom:12px;">🔍</div>
-            <div style="font-size:1rem;font-weight:600;color:#44475b;">Click Screen Stocks to load live data</div>
+        <div style="text-align:center;padding:60px 0;color:var(--eiq-text-secondary);">
+            <div style="font-size:1rem;font-weight:600;color:var(--eiq-text);">Run a screen to load live data</div>
             <div style="font-size:0.84rem;margin-top:6px;">First scan: ~60–90 s &nbsp;·&nbsp; Results cached 15 minutes</div>
         </div>
         """, unsafe_allow_html=True)
         return
 
-    # ── Filter panels ──────────────────────────────────────────────────────────
-    st.markdown('<div class="section-head">Filters</div>', unsafe_allow_html=True)
+    # ── Filter sidebar (or popover when collapsed) + results workspace ────────
+    total_active = sum(1 for k in _SC_FILTER_META if _sc_is_active(k))
 
-    # helper: read float from slider key
-    def sf(key, default=(0.0, 999999.0)):
-        return st.session_state.get(key, default)
-
-    f1, f2 = st.columns(2)
-
-    with f1:
-        with st.expander("🌍 Market Filters", expanded=False):
-            mc_range = st.slider("Market Cap (Bn, local currency)", 0.0, 3000.0, (0.0, 3000.0), 10.0, key="f_mc")
-            all_sectors = sorted({d.get("sector","") for d in stocks if d.get("sector")})
-            all_countries = sorted({d.get("country","") for d in stocks if d.get("country")})
-            sel_sectors  = st.multiselect("Sector", all_sectors, key="f_sec")
-            sel_countries = st.multiselect("Country", all_countries, key="f_cty")
-
-        with st.expander("📊 Valuation Filters", expanded=False):
-            pe_range  = st.slider("P/E Ratio",      0.0,  100.0, (0.0, 100.0),  1.0, key="f_pe")
-            pb_range  = st.slider("P/B Ratio",      0.0,   25.0, (0.0,  25.0),  0.5, key="f_pb")
-            ps_range  = st.slider("P/S Ratio",      0.0,   25.0, (0.0,  25.0),  0.5, key="f_ps")
-            div_range = st.slider("Dividend Yield (%)", 0.0, 15.0, (0.0, 15.0), 0.25, key="f_div")
-
-        with st.expander("💎 Quality Filters", expanded=False):
-            roe_range = st.slider("ROE (%)",           -30.0, 100.0, (-30.0, 100.0), 1.0, key="f_roe")
-            roa_range = st.slider("ROA (%)",           -20.0,  50.0, (-20.0,  50.0), 1.0, key="f_roa")
-            pm_range  = st.slider("Profit Margin (%)", -50.0,  80.0, (-50.0,  80.0), 1.0, key="f_pm")
-            pos_fcf   = st.checkbox("Positive Free Cash Flow only", key="f_fcf")
-
-        with st.expander("📈 Growth Filters", expanded=False):
-            rg_range  = st.slider("Revenue Growth (%)",  -50.0, 100.0, (-50.0, 100.0), 1.0, key="f_rg")
-            eg_range  = st.slider("Earnings Growth (%)", -50.0, 100.0, (-50.0, 100.0), 1.0, key="f_eg")
-
-    with f2:
-        with st.expander("⚠️ Risk Filters", expanded=False):
-            de_range  = st.slider("Debt / Equity",  0.0, 5.0, (0.0, 5.0), 0.1, key="f_de")
-            cr_range  = st.slider("Current Ratio",  0.0, 5.0, (0.0, 5.0), 0.1, key="f_cr")
-            beta_range = st.slider("Beta",          -1.0, 4.0, (-1.0, 4.0), 0.1, key="f_beta")
-
-        with st.expander("💰 Dividend Filters", expanded=False):
-            only_divid = st.checkbox("Dividend payers only", key="f_only_div")
-            upcoming_div = st.checkbox("Upcoming ex-dividend (next 60 days)", key="f_upcoming_div")
-            min_yield  = st.slider("Min Dividend Yield (%)", 0.0, 10.0, 0.0, 0.25, key="f_min_yield")
-            max_payout = st.slider("Max Payout Ratio (%)", 0.0, 200.0, 200.0, 5.0, key="f_payout")
-
-        with st.expander("📰 Analyst Filters", expanded=False):
-            sel_analyst  = st.multiselect(
-                "Analyst Rating",
-                ["strong_buy", "buy", "hold", "underperform", "sell"],
-                key="f_analyst",
+    def _sidebar_header_and_filters():
+        badge = f'<span class="sc-active-badge">{total_active}</span>' if total_active else ""
+        st.markdown(f'<div class="sc-sidebar-header"><div class="sc-sidebar-title">Filters{badge}</div></div>', unsafe_allow_html=True)
+        hc1, hc2 = st.columns([3, 1.4])
+        with hc1:
+            filter_search = st.text_input(
+                "Search filters", placeholder="Search filters (P/E, ROE, dividend…)",
+                key="sc_filter_search", label_visibility="collapsed",
             )
-            has_target   = st.checkbox("Has analyst target price", key="f_has_target")
-            min_analysts = st.slider("Min analyst opinions", 0, 50, 0, 1, key="f_min_analysts")
+        with hc2:
+            with st.container(key="sc_clear_all"):
+                if total_active and st.button("Clear all", key="sc_clear_all_btn"):
+                    _sc_reset_all()
+        _render_sc_filters(stocks, filter_search)
 
-    # ── Apply filters ──────────────────────────────────────────────────────────
-    import datetime as _dt
+    if st.session_state.sc_sidebar_open:
+        sidebar_col, results_col = st.columns([1, 2.7], gap="large")
+        with sidebar_col:
+            with st.container(key="sc_sidebar"):
+                _sidebar_header_and_filters()
+    else:
+        results_col = st.container()
+        with results_col:
+            with st.popover("Filters", icon=":material/tune:"):
+                _sidebar_header_and_filters()
 
-    today = _dt.date.today()
-    cutoff_div = today + _dt.timedelta(days=60)
+    with results_col:
+        # ── Read current filter values from session state ──────────────────
+        mc_range      = st.session_state.get("f_mc", (0.0, 3000.0))
+        sel_sectors   = st.session_state.get("f_sec", [])
+        sel_countries = st.session_state.get("f_cty", [])
+        pe_range      = st.session_state.get("f_pe", (0.0, 100.0))
+        pb_range      = st.session_state.get("f_pb", (0.0, 25.0))
+        ps_range      = st.session_state.get("f_ps", (0.0, 25.0))
+        div_range     = st.session_state.get("f_div", (0.0, 15.0))
+        roe_range     = st.session_state.get("f_roe", (-30.0, 100.0))
+        roa_range     = st.session_state.get("f_roa", (-20.0, 50.0))
+        pm_range      = st.session_state.get("f_pm", (-50.0, 80.0))
+        pos_fcf       = st.session_state.get("f_fcf", False)
+        rg_range      = st.session_state.get("f_rg", (-50.0, 100.0))
+        eg_range      = st.session_state.get("f_eg", (-50.0, 100.0))
+        de_range      = st.session_state.get("f_de", (0.0, 5.0))
+        cr_range      = st.session_state.get("f_cr", (0.0, 5.0))
+        beta_range    = st.session_state.get("f_beta", (-1.0, 4.0))
+        only_divid    = st.session_state.get("f_only_div", False)
+        upcoming_div  = st.session_state.get("f_upcoming_div", False)
+        min_yield     = st.session_state.get("f_min_yield", 0.0)
+        max_payout    = st.session_state.get("f_payout", 200.0)
+        sel_analyst   = st.session_state.get("f_analyst", [])
+        has_target    = st.session_state.get("f_has_target", False)
+        min_analysts  = st.session_state.get("f_min_analysts", 0)
+        cur_currency  = st.session_state.get("f_currency", "USD")
+        mc_sym        = "₹" if cur_currency == "INR" else "$"
+        fx_rate       = get_usd_inr_rate()
 
-    filtered = []
-    for d in stocks:
-        mc_b = (d.get("market_cap") or 0) / 1e9
-        if not (mc_range[0] <= mc_b <= mc_range[1]):
-            continue
+        today      = _dt.date.today()
+        cutoff_div = today + _dt.timedelta(days=60)
 
-        if sel_sectors and d.get("sector") not in sel_sectors:
-            continue
-        if sel_countries and d.get("country") not in sel_countries:
-            continue
-
-        pe = d.get("pe_ratio")
-        if pe is not None and pe > 0 and not (pe_range[0] <= pe <= pe_range[1]):
-            continue
-
-        pb = d.get("pb_ratio")
-        if pb is not None and pb > 0 and not (pb_range[0] <= pb <= pb_range[1]):
-            continue
-
-        ps = d.get("ps_ratio")
-        if ps is not None and ps > 0 and not (ps_range[0] <= ps <= ps_range[1]):
-            continue
-
-        dy = (d.get("dividend_yield") or 0) * 100
-        if not (div_range[0] <= dy <= div_range[1]):
-            continue
-
-        roe = d.get("roe")
-        if roe is not None and not (roe_range[0] <= roe * 100 <= roe_range[1]):
-            continue
-
-        roa = d.get("roa")
-        if roa is not None and not (roa_range[0] <= roa * 100 <= roa_range[1]):
-            continue
-
-        pm = d.get("profit_margin")
-        if pm is not None and not (pm_range[0] <= pm * 100 <= pm_range[1]):
-            continue
-
-        if pos_fcf and not (d.get("free_cash_flow") or 0) > 0:
-            continue
-
-        rg = d.get("revenue_growth")
-        if rg is not None and not (rg_range[0] <= rg * 100 <= rg_range[1]):
-            continue
-
-        eg = d.get("earnings_growth")
-        if eg is not None and not (eg_range[0] <= eg * 100 <= eg_range[1]):
-            continue
-
-        de = d.get("debt_to_equity")
-        if de is not None and not (de_range[0] <= de <= de_range[1]):
-            continue
-
-        cr = d.get("current_ratio")
-        if cr is not None and not (cr_range[0] <= cr <= cr_range[1]):
-            continue
-
-        beta = d.get("beta")
-        if beta is not None and not (beta_range[0] <= beta <= beta_range[1]):
-            continue
-
-        if only_divid and not (d.get("dividend_yield") or 0) > 0:
-            continue
-
-        if min_yield > 0 and (d.get("dividend_yield") or 0) * 100 < min_yield:
-            continue
-
-        pr = (d.get("payout_ratio") or 0) * 100
-        if pr > max_payout:
-            continue
-
-        if upcoming_div:
-            ex_s = d.get("ex_div_date", "")
-            try:
-                ex_d = _dt.date.fromisoformat(ex_s) if ex_s else None
-            except ValueError:
-                ex_d = None
-            if not ex_d or not (today <= ex_d <= cutoff_div):
+        filtered = []
+        for d in stocks:
+            conv_cap = convert_market_cap(d.get("market_cap"), d.get("currency", "USD"), cur_currency, fx_rate)
+            mc_b = (conv_cap or 0) / 1e9
+            if not (mc_range[0] <= mc_b <= mc_range[1]):
                 continue
 
-        if sel_analyst and d.get("analyst_rating") not in sel_analyst:
-            continue
+            if sel_sectors and d.get("sector") not in sel_sectors:
+                continue
+            if sel_countries and d.get("country") not in sel_countries:
+                continue
 
-        if has_target and not d.get("target_price"):
-            continue
+            pe = d.get("pe_ratio")
+            if pe is not None and pe > 0 and not (pe_range[0] <= pe <= pe_range[1]):
+                continue
 
-        if d.get("analyst_count", 0) < min_analysts:
-            continue
+            pb = d.get("pb_ratio")
+            if pb is not None and pb > 0 and not (pb_range[0] <= pb <= pb_range[1]):
+                continue
 
-        filtered.append(d)
+            ps = d.get("ps_ratio")
+            if ps is not None and ps > 0 and not (ps_range[0] <= ps <= ps_range[1]):
+                continue
 
-    # ── Summary bar ───────────────────────────────────────────────────────────
-    div_payers = sum(1 for d in filtered if (d.get("dividend_yield") or 0) > 0)
-    avg_hs     = round(sum(d.get("health_score", 0) for d in filtered) / len(filtered)) if filtered else 0
+            dy = (d.get("dividend_yield") or 0) * 100
+            if not (div_range[0] <= dy <= div_range[1]):
+                continue
 
-    sm1, sm2, sm3, sm4 = st.columns(4)
-    with sm1:
-        create_metric_card("Matching Stocks", str(len(filtered)))
-    with sm2:
-        create_metric_card("Dividend Payers", str(div_payers))
-    with sm3:
-        create_metric_card("Avg Health Score", str(avg_hs))
-    with sm4:
-        a_grades = {"A": 0, "B": 0, "C": 0, "D": 0, "F": 0}
+            roe = d.get("roe")
+            if roe is not None and not (roe_range[0] <= roe * 100 <= roe_range[1]):
+                continue
+
+            roa = d.get("roa")
+            if roa is not None and not (roa_range[0] <= roa * 100 <= roa_range[1]):
+                continue
+
+            pm = d.get("profit_margin")
+            if pm is not None and not (pm_range[0] <= pm * 100 <= pm_range[1]):
+                continue
+
+            if pos_fcf and not (d.get("free_cash_flow") or 0) > 0:
+                continue
+
+            rg = d.get("revenue_growth")
+            if rg is not None and not (rg_range[0] <= rg * 100 <= rg_range[1]):
+                continue
+
+            eg = d.get("earnings_growth")
+            if eg is not None and not (eg_range[0] <= eg * 100 <= eg_range[1]):
+                continue
+
+            de = d.get("debt_to_equity")
+            if de is not None and not (de_range[0] <= de <= de_range[1]):
+                continue
+
+            cr = d.get("current_ratio")
+            if cr is not None and not (cr_range[0] <= cr <= cr_range[1]):
+                continue
+
+            beta = d.get("beta")
+            if beta is not None and not (beta_range[0] <= beta <= beta_range[1]):
+                continue
+
+            if only_divid and not (d.get("dividend_yield") or 0) > 0:
+                continue
+
+            if min_yield > 0 and (d.get("dividend_yield") or 0) * 100 < min_yield:
+                continue
+
+            pr = (d.get("payout_ratio") or 0) * 100
+            if pr > max_payout:
+                continue
+
+            if upcoming_div:
+                ex_s = d.get("ex_div_date", "")
+                try:
+                    ex_d = _dt.date.fromisoformat(ex_s) if ex_s else None
+                except ValueError:
+                    ex_d = None
+                if not ex_d or not (today <= ex_d <= cutoff_div):
+                    continue
+
+            if sel_analyst and d.get("analyst_rating") not in sel_analyst:
+                continue
+
+            if has_target and not d.get("target_price"):
+                continue
+
+            if d.get("analyst_count", 0) < min_analysts:
+                continue
+
+            filtered.append(d)
+
+        # ── Active-filter chips ──────────────────────────────────────────────
+        active_keys = [k for k in _SC_FILTER_META if _sc_is_active(k)]
+        if active_keys:
+            st.markdown('<div style="font-size:0.78rem;font-weight:600;color:var(--eiq-text-secondary);margin:2px 0 6px;">Active filters</div>', unsafe_allow_html=True)
+            with st.container(key="sc_active_chips"):
+                for k in active_keys:
+                    st.button(_sc_phrase(k), key=f"chip_{k}", icon=":material/close:", on_click=_sc_clear_one, args=(k,))
+                if len(active_keys) > 1:
+                    st.button("Clear all", key="sc_clear_all_chip", icon=":material/clear_all:", on_click=_sc_reset_all)
+
+        # ── Summary cards ─────────────────────────────────────────────────────
+        div_payers = sum(1 for d in filtered if (d.get("dividend_yield") or 0) > 0)
+        avg_hs     = round(sum(d.get("health_score", 0) for d in filtered) / len(filtered)) if filtered else 0
+        a_grades   = {"A": 0, "B": 0, "C": 0, "D": 0, "F": 0}
         for d in filtered:
             g = d.get("health_grade", "")
             if g in a_grades:
                 a_grades[g] += 1
-        top_grade = max(a_grades, key=a_grades.get) if filtered else "—"
-        create_metric_card("Most Common Grade", top_grade)
+        top_grade = max(a_grades, key=a_grades.get) if filtered and any(a_grades.values()) else "—"
 
-    # ── Results table ─────────────────────────────────────────────────────────
-    st.markdown(f'<div class="section-head">Results ({len(filtered)} stocks)</div>', unsafe_allow_html=True)
+        st.markdown(f"""
+        <div class="sc-summary-row">
+            <div class="sc-summary-card"><div>
+                <div class="sc-summary-label">Matching Stocks</div>
+                <div class="sc-summary-value">{len(filtered)}</div>
+            </div></div>
+            <div class="sc-summary-card"><div>
+                <div class="sc-summary-label">Dividend Payers</div>
+                <div class="sc-summary-value">{div_payers}</div>
+            </div></div>
+            <div class="sc-summary-card"><div>
+                <div class="sc-summary-label">Avg Health Score</div>
+                <div class="sc-summary-value">{avg_hs}<span class="sc-summary-help"> /100</span></div>
+            </div></div>
+            <div class="sc-summary-card"><div>
+                <div class="sc-summary-label">Most Common Grade</div>
+                <div class="sc-summary-value">{top_grade}</div>
+            </div></div>
+        </div>
+        """, unsafe_allow_html=True)
 
-    if not filtered:
-        st.info("No stocks match the current filters. Try relaxing the filter ranges.")
-    else:
-        import pandas as pd
+        # ── Results table ────────────────────────────────────────────────────
+        st.markdown(f'<div class="section-head">Results ({len(filtered)} stocks)</div>', unsafe_allow_html=True)
 
-        rows = []
-        for d in filtered:
-            row_sym = currency_symbol(d.get("currency", "USD"))
-            rows.append({
-                "Ticker":       d["ticker"],
-                "Company":      (d["company"] or d["ticker"])[:28],
-                "Sector":       d.get("sector", ""),
-                "Price":        f"{row_sym}{d['price']:,.2f}" if d.get("price") else "N/A",
-                "Mkt Cap":      _mcap_label(d.get("market_cap"), row_sym),
-                "P/E":          _fmt(d.get("pe_ratio"), ".1f"),
-                "P/B":          _fmt(d.get("pb_ratio"), ".2f"),
-                "P/S":          _fmt(d.get("ps_ratio"), ".2f"),
-                "Div Yield":    _fmt(d.get("dividend_yield"), ".2f", "%", 100) if d.get("dividend_yield") else "—",
-                "ROE":          _fmt(d.get("roe"), ".1f", "%", 100),
-                "ROA":          _fmt(d.get("roa"), ".1f", "%", 100),
-                "Rev Growth":   _fmt(d.get("revenue_growth"), ".1f", "%", 100),
-                "D/E":          _fmt(d.get("debt_to_equity"), ".2f"),
-                "Cur Ratio":    _fmt(d.get("current_ratio"), ".2f"),
-                "Health":       f'{d.get("health_score","?")} ({d.get("health_grade","?")})',
-                "Analyst":      (d.get("analyst_rating") or "—").replace("_", " ").title(),
-                "Target":       f"{row_sym}{d['target_price']:,.2f}" if d.get("target_price") else "—",
-                "Ex-Div Date":  d.get("ex_div_date") or "—",
-            })
+        if not filtered:
+            st.markdown("""
+            <div style="text-align:center;padding:50px 0;color:var(--eiq-text-secondary);">
+                <div style="font-size:1rem;font-weight:600;color:var(--eiq-text);">No companies match your filters.</div>
+                <div style="font-size:0.84rem;margin-top:6px;">Try relaxing the filter ranges or clearing some filters.</div>
+            </div>
+            """, unsafe_allow_html=True)
+            if active_keys:
+                st.button("Clear filters", key="sc_clear_empty", icon=":material/clear_all:", on_click=_sc_reset_all)
+        else:
+            mc_col_name = f"Mkt Cap ({mc_sym}Bn)"
+            with st.container(key="sc_toolbar"):
+                tb1, tb2, tb3 = st.columns([3, 2.4, 1.4])
+                with tb1:
+                    search_q = st.text_input(
+                        "Search results", placeholder="Search by ticker or company…",
+                        key="sc_search", label_visibility="collapsed",
+                    )
+                with tb2:
+                    optional_cols = ["Sector", "P/S", "ROA", "Current Ratio", "Ex-Div Date"]
+                    shown_optional = st.multiselect(
+                        "Columns", optional_cols, default=optional_cols, key="sc_columns",
+                        label_visibility="collapsed", placeholder="Customize columns",
+                    )
+                with tb3:
+                    density = st.selectbox("Density", ["Comfortable", "Compact"], key="sc_density", label_visibility="collapsed")
 
-        df = pd.DataFrame(rows)
-        st.dataframe(df, use_container_width=True, hide_index=True, height=420)
+            table_data = filtered
+            if search_q and search_q.strip():
+                sq = search_q.strip().lower()
+                table_data = [d for d in table_data if sq in d["ticker"].lower() or sq in (d.get("company") or "").lower()]
 
-        # Download button
-        csv = df.to_csv(index=False).encode("utf-8")
-        st.download_button("⬇️ Export CSV", csv, "screener_results.csv", "text/csv", key="sc_csv")
+            rows = []
+            for d in table_data:
+                row_sym  = currency_symbol(d.get("currency", "USD"))
+                conv_cap = convert_market_cap(d.get("market_cap"), d.get("currency", "USD"), cur_currency, fx_rate)
+                exch = "NSE" if d["ticker"].endswith(".NS") else ("BSE" if d["ticker"].endswith(".BO") else "US")
+                rows.append({
+                    "Ticker":      d["ticker"],
+                    "Company":     d["company"] or d["ticker"],
+                    "Exchange":    exch,
+                    "Sector":      d.get("sector", ""),
+                    mc_col_name:   round(conv_cap / 1e9, 2) if conv_cap else None,
+                    "Price":       f"{row_sym}{d['price']:,.2f}" if d.get("price") else None,
+                    "P/E":         d.get("pe_ratio"),
+                    "P/B":         d.get("pb_ratio"),
+                    "P/S":         d.get("ps_ratio"),
+                    "Div Yield":   round(d["dividend_yield"] * 100, 2) if d.get("dividend_yield") else None,
+                    "ROE":         round(d["roe"] * 100, 1) if d.get("roe") is not None else None,
+                    "ROA":         round(d["roa"] * 100, 1) if d.get("roa") is not None else None,
+                    "Rev Growth":  round(d["revenue_growth"] * 100, 1) if d.get("revenue_growth") is not None else None,
+                    "D/E":         d.get("debt_to_equity"),
+                    "Current Ratio": d.get("current_ratio"),
+                    "Health":      f'{d.get("health_score", "?")} · {d.get("health_grade", "?")}',
+                    "Analyst":     (d.get("analyst_rating") or "").replace("_", " ").title() or "—",
+                    "Target":      f"{row_sym}{d['target_price']:,.2f}" if d.get("target_price") else None,
+                    "Ex-Div Date": d.get("ex_div_date") or "—",
+                })
 
-    # ── Dividend Calendar (yfinance data for screened stocks) ─────────────────
-    upcoming = get_upcoming_dividends(filtered, days=90)
+            df = pd.DataFrame(rows)
 
-    # Optionally enrich US stocks with Finnhub and pull NSE calendar
-    finnhub_key = os.getenv("FINNHUB_API_KEY", "")
-    from screener import enrich_dividends_finnhub, fetch_nse_dividend_calendar
+            canonical = ["Ticker", "Company", "Exchange", "Sector", mc_col_name, "Price", "P/E", "P/B", "P/S",
+                         "Div Yield", "ROE", "ROA", "Rev Growth", "D/E", "Current Ratio", "Health", "Analyst",
+                         "Target", "Ex-Div Date"]
+            visible = {"Ticker", "Company", "Exchange", mc_col_name, "Price", "P/E", "P/B", "Div Yield",
+                       "ROE", "Rev Growth", "D/E", "Health", "Analyst", "Target"} | set(shown_optional)
+            visible_cols = [c for c in canonical if c in visible]
 
-    finnhub_enriched = {}
-    if finnhub_key:
-        us_tickers = tuple(
-            d["ticker"] for d in filtered
-            if not d["ticker"].endswith(".NS") and not d["ticker"].endswith(".BO")
-        )
-        if us_tickers:
-            with st.spinner("Enriching US dividend dates via Finnhub…"):
-                finnhub_enriched = enrich_dividends_finnhub(finnhub_key, us_tickers)
-            # Merge Finnhub dates into upcoming list items where available
-            for item in upcoming:
-                tk = item["ticker"]
-                if tk in finnhub_enriched:
-                    fh = finnhub_enriched[tk]
-                    if fh.get("ex_div_date"):
-                        item["ex_div_date"]   = fh["ex_div_date"]
-                        item["pay_date"]      = fh.get("pay_date", item.get("pay_date", ""))
-                        item["dividend_rate"] = fh.get("dividend_rate") or item.get("dividend_rate")
-                        item["_source"]       = "Finnhub"
+            col_cfg = {
+                "Ticker":        st.column_config.TextColumn("Ticker", pinned=True, width="small"),
+                "Company":       st.column_config.TextColumn("Company", pinned=True, width="medium"),
+                "Exchange":      st.column_config.TextColumn("Exch", width="small"),
+                "Sector":        st.column_config.TextColumn("Sector"),
+                mc_col_name:     st.column_config.NumberColumn(mc_col_name, format="%.2f", alignment="right"),
+                "Price":         st.column_config.TextColumn("Price", alignment="right"),
+                "P/E":           st.column_config.NumberColumn("P/E", format="%.1f", alignment="right"),
+                "P/B":           st.column_config.NumberColumn("P/B", format="%.2f", alignment="right"),
+                "P/S":           st.column_config.NumberColumn("P/S", format="%.2f", alignment="right"),
+                "Div Yield":     st.column_config.NumberColumn("Div Yield %", format="%.2f", alignment="right"),
+                "ROE":           st.column_config.NumberColumn("ROE %", format="%.1f", alignment="right"),
+                "ROA":           st.column_config.NumberColumn("ROA %", format="%.1f", alignment="right"),
+                "Rev Growth":    st.column_config.NumberColumn("Rev Growth %", format="%.1f", alignment="right"),
+                "D/E":           st.column_config.NumberColumn("D/E", format="%.2f", alignment="right"),
+                "Current Ratio": st.column_config.NumberColumn("Cur Ratio", format="%.2f", alignment="right"),
+                "Health":        st.column_config.TextColumn("Health (score · grade)"),
+                "Analyst":       st.column_config.TextColumn("Analyst"),
+                "Target":        st.column_config.TextColumn("Target", alignment="right"),
+                "Ex-Div Date":   st.column_config.TextColumn("Ex-Div"),
+            }
 
-    # NSE India calendar for Indian stocks
-    nse_divs = []
-    has_indian = any(
-        d["ticker"].endswith(".NS") or d["ticker"].endswith(".BO")
-        for d in filtered
-    )
-    if has_indian:
-        with st.spinner("Fetching NSE dividend calendar…"):
-            nse_divs = fetch_nse_dividend_calendar(days_ahead=90)
+            row_h = 34 if density == "Compact" else 46
+            selection = st.dataframe(
+                df[visible_cols], hide_index=True, width="stretch",
+                height=420, column_config=col_cfg, row_height=row_h,
+                on_select="rerun", selection_mode="single-row", key="sc_table",
+            )
 
-    if upcoming or nse_divs:
-        st.markdown('<div class="section-head">Upcoming Dividend Calendar (next 90 days)</div>', unsafe_allow_html=True)
+            try:
+                sel_rows = selection.selection["rows"] if hasattr(selection, "selection") else []
+            except Exception:
+                sel_rows = []
+            if sel_rows:
+                sel_idx = sel_rows[0]
+                if st.session_state.get("sc_last_nav_idx") != (sel_idx, len(table_data)):
+                    st.session_state["sc_last_nav_idx"] = (sel_idx, len(table_data))
+                    sel_ticker = df.iloc[sel_idx]["Ticker"]
+                    match = next(
+                        (f"{row['name']}{_TICKER_SEP}{row['ticker']}" for row in get_company_directory() if row["ticker"] == sel_ticker),
+                        sel_ticker,
+                    )
+                    st.session_state["ticker_search"] = match
+                    _navigate("ticker")
 
-        # Show yfinance/Finnhub upcoming (US + global)
-        if upcoming:
-            st.markdown('<div style="font-size:0.85rem;color:#64748b;margin-bottom:8px;">US &amp; Global Stocks</div>', unsafe_allow_html=True)
-            for d in upcoming:
-                days_left     = d["_days_until"]
-                urgency_color = "#E5484D" if days_left <= 7 else ("#B9791F" if days_left <= 21 else "#16A36A")
-                div_sym = currency_symbol(d.get("currency", "USD"))
-                dy_pct = _fmt(d.get("dividend_yield"), ".2f", "%", 100) if d.get("dividend_yield") else "—"
-                dr     = f"{div_sym}{d['dividend_rate']:.2f}/yr" if d.get("dividend_rate") else "—"
-                pay_d  = d.get("pay_date") or "—"
-                src    = d.get("_source", "yfinance")
+            exp_col, _sp = st.columns([1.6, 8.4])
+            with exp_col:
+                csv = df[visible_cols].to_csv(index=False).encode("utf-8")
+                st.download_button(
+                    "Export CSV", csv, "screener_results.csv", "text/csv",
+                    key="sc_csv", icon=":material/download:",
+                )
 
-                h  = '<div class="watchlist-card wl-normal" style="margin-bottom:10px;">'
-                h += '<div class="wl-row">'
-                h += '<div class="wl-left">'
-                h += f'<span class="wl-ticker">{d["ticker"]}</span>'
-                h += f'<div><span class="wl-company">{d["company"][:30]}</span>'
-                h += f' <span style="font-size:0.72rem;color:#94a3b8;">via {src}</span></div>'
-                h += '</div>'
-                h += '<div class="wl-right" style="text-align:right;">'
-                h += f'<div class="wl-price">{dy_pct} yield · {dr}</div>'
-                h += f'<div class="wl-alert-price">Ex-Div: <b>{d["ex_div_date"]}</b> · Pay: {pay_d}</div>'
-                h += f'<div class="wl-status" style="color:{urgency_color};font-weight:600;">⏰ {days_left} days until ex-dividend</div>'
-                h += '</div></div></div>'
-                st.markdown(h, unsafe_allow_html=True)
+        # ── Dividend Calendar (yfinance data for screened stocks) ────────────
+        upcoming = get_upcoming_dividends(filtered, days=90)
 
-        # Show NSE India calendar
-        if nse_divs:
-            st.markdown('<div style="font-size:0.85rem;color:#64748b;margin:16px 0 8px;">NSE India (via NSE Official API)</div>', unsafe_allow_html=True)
-            import datetime as _dt2
-            today2 = _dt2.date.today()
-            for item in nse_divs[:20]:
-                ex_s = item.get("ex_div_date", "")
-                try:
-                    ex_d   = _dt2.date.fromisoformat(ex_s)
-                    days_l = (ex_d - today2).days
-                except (ValueError, TypeError):
-                    days_l = 0
-                urg_c = "#E5484D" if days_l <= 7 else ("#B9791F" if days_l <= 21 else "#16A36A")
+        finnhub_key = os.getenv("FINNHUB_API_KEY", "")
+        finnhub_enriched = {}
+        if finnhub_key:
+            us_tickers = tuple(
+                d["ticker"] for d in filtered
+                if not d["ticker"].endswith(".NS") and not d["ticker"].endswith(".BO")
+            )
+            if us_tickers:
+                with st.spinner("Enriching US dividend dates via Finnhub…"):
+                    finnhub_enriched = enrich_dividends_finnhub(finnhub_key, us_tickers)
+                for item in upcoming:
+                    tk = item["ticker"]
+                    if tk in finnhub_enriched:
+                        fh = finnhub_enriched[tk]
+                        if fh.get("ex_div_date"):
+                            item["ex_div_date"]   = fh["ex_div_date"]
+                            item["pay_date"]      = fh.get("pay_date", item.get("pay_date", ""))
+                            item["dividend_rate"] = fh.get("dividend_rate") or item.get("dividend_rate")
+                            item["_source"]       = "Finnhub"
 
-                h  = '<div class="watchlist-card wl-normal" style="margin-bottom:10px;">'
-                h += '<div class="wl-row">'
-                h += '<div class="wl-left">'
-                h += f'<span class="wl-ticker">{item["symbol"]}</span>'
-                h += f'<div><span class="wl-company">{item["company"][:30]}</span>'
-                h += ' <span style="font-size:0.72rem;color:#94a3b8;">NSE India</span></div>'
-                h += '</div>'
-                h += '<div class="wl-right" style="text-align:right;">'
-                h += f'<div class="wl-price">{item.get("dividend_amount", "—")}</div>'
-                h += f'<div class="wl-alert-price">Ex-Div: <b>{ex_s}</b></div>'
-                h += f'<div class="wl-status" style="color:{urg_c};font-weight:600;">⏰ {days_l} days until ex-dividend</div>'
-                h += '</div></div></div>'
-                st.markdown(h, unsafe_allow_html=True)
+        nse_divs = []
+        has_indian = any(d["ticker"].endswith(".NS") or d["ticker"].endswith(".BO") for d in filtered)
+        if has_indian:
+            with st.spinner("Fetching NSE dividend calendar…"):
+                nse_divs = fetch_nse_dividend_calendar(days_ahead=90)
 
-    _render_trust_footer()
+        if upcoming or nse_divs:
+            st.markdown('<div class="section-head">Upcoming Dividend Calendar (next 90 days)</div>', unsafe_allow_html=True)
+
+            if upcoming:
+                st.markdown('<div style="font-size:0.85rem;color:var(--eiq-text-secondary);margin-bottom:8px;">US &amp; Global Stocks</div>', unsafe_allow_html=True)
+                for d in upcoming:
+                    days_left     = d["_days_until"]
+                    urgency_color = "#E5484D" if days_left <= 7 else ("#B9791F" if days_left <= 21 else "#16A36A")
+                    div_sym = currency_symbol(d.get("currency", "USD"))
+                    dy_pct  = _fmt(d.get("dividend_yield"), ".2f", "%", 100) if d.get("dividend_yield") else "—"
+                    dr      = f"{div_sym}{d['dividend_rate']:.2f}/yr" if d.get("dividend_rate") else "—"
+                    pay_d   = d.get("pay_date") or "—"
+                    src     = d.get("_source", "yfinance")
+
+                    h  = '<div class="watchlist-card wl-normal" style="margin-bottom:10px;">'
+                    h += '<div class="wl-row">'
+                    h += '<div class="wl-left">'
+                    h += f'<span class="wl-ticker">{d["ticker"]}</span>'
+                    h += f'<div><span class="wl-company">{d["company"][:30]}</span>'
+                    h += f' <span class="sc-exch-badge">via {src}</span></div>'
+                    h += '</div>'
+                    h += '<div class="wl-right" style="text-align:right;">'
+                    h += f'<div class="wl-price">{dy_pct} yield · {dr}</div>'
+                    h += f'<div class="wl-alert-price">Ex-Div: <b>{d["ex_div_date"]}</b> · Pay: {pay_d}</div>'
+                    h += f'<div class="wl-status" style="color:{urgency_color};font-weight:600;">{days_left} days until ex-dividend</div>'
+                    h += '</div></div></div>'
+                    st.markdown(h, unsafe_allow_html=True)
+
+            if nse_divs:
+                st.markdown('<div style="font-size:0.85rem;color:var(--eiq-text-secondary);margin:16px 0 8px;">NSE India (via NSE Official API)</div>', unsafe_allow_html=True)
+                today2 = _dt.date.today()
+                for item in nse_divs[:20]:
+                    ex_s = item.get("ex_div_date", "")
+                    try:
+                        ex_d   = _dt.date.fromisoformat(ex_s)
+                        days_l = (ex_d - today2).days
+                    except (ValueError, TypeError):
+                        days_l = 0
+                    urg_c = "#E5484D" if days_l <= 7 else ("#B9791F" if days_l <= 21 else "#16A36A")
+
+                    h  = '<div class="watchlist-card wl-normal" style="margin-bottom:10px;">'
+                    h += '<div class="wl-row">'
+                    h += '<div class="wl-left">'
+                    h += f'<span class="wl-ticker">{item["symbol"]}</span>'
+                    h += f'<div><span class="wl-company">{item["company"][:30]}</span>'
+                    h += ' <span class="sc-exch-badge">NSE India</span></div>'
+                    h += '</div>'
+                    h += '<div class="wl-right" style="text-align:right;">'
+                    h += f'<div class="wl-price">{item.get("dividend_amount", "—")}</div>'
+                    h += f'<div class="wl-alert-price">Ex-Div: <b>{ex_s}</b></div>'
+                    h += f'<div class="wl-status" style="color:{urg_c};font-weight:600;">{days_l} days until ex-dividend</div>'
+                    h += '</div></div></div>'
+                    st.markdown(h, unsafe_allow_html=True)
+
+        _render_trust_footer()
 
 
 # ── Main ───────────────────────────────────────────────────────────────────────
 
 def main():
-    setup_page()
+    st.session_state.setdefault("dark_mode", False)
+    setup_page(dark_mode=st.session_state.dark_mode)
 
     env_key = os.getenv("GEMINI_API_KEY")
     api_key = env_key if (env_key and len(env_key) > 10) else ""

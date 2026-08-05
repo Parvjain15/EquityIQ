@@ -9,7 +9,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 INDIAN_TICKERS = [
     # Nifty 50
     "RELIANCE.NS", "TCS.NS", "HDFCBANK.NS", "BHARTIARTL.NS", "ICICIBANK.NS",
-    "INFOSYS.NS", "SBIN.NS", "HINDUNILVR.NS", "ITC.NS", "LT.NS",
+    "INFY.NS", "SBIN.NS", "HINDUNILVR.NS", "ITC.NS", "LT.NS",
     "BAJFINANCE.NS", "HCLTECH.NS", "KOTAKBANK.NS", "MARUTI.NS", "AXISBANK.NS",
     "ASIANPAINT.NS", "SUNPHARMA.NS", "TITAN.NS", "WIPRO.NS", "ULTRACEMCO.NS",
     "NTPC.NS", "POWERGRID.NS", "ONGC.NS", "COALINDIA.NS", "TATAMOTORS.NS",
@@ -30,6 +30,61 @@ INDIAN_TICKERS = [
     "AUROPHARMA.NS", "ALKEM.NS", "LICI.NS", "PFC.NS", "RECLTD.NS",
     "NAUKRI.NS", "PAGEIND.NS", "VBL.NS", "CONCOR.NS", "PIIND.NS",
 ]
+
+# ── Indian ticker → company name (Wikipedia only lists S&P 500 names, so the
+#    Nifty tickers need their own map for the name-search directory) ──────────
+INDIAN_TICKER_NAMES = {
+    "RELIANCE.NS": "Reliance Industries", "TCS.NS": "Tata Consultancy Services",
+    "HDFCBANK.NS": "HDFC Bank", "BHARTIARTL.NS": "Bharti Airtel",
+    "ICICIBANK.NS": "ICICI Bank", "INFY.NS": "Infosys",
+    "SBIN.NS": "State Bank of India", "HINDUNILVR.NS": "Hindustan Unilever",
+    "ITC.NS": "ITC", "LT.NS": "Larsen & Toubro",
+    "BAJFINANCE.NS": "Bajaj Finance", "HCLTECH.NS": "HCL Technologies",
+    "KOTAKBANK.NS": "Kotak Mahindra Bank", "MARUTI.NS": "Maruti Suzuki",
+    "AXISBANK.NS": "Axis Bank", "ASIANPAINT.NS": "Asian Paints",
+    "SUNPHARMA.NS": "Sun Pharmaceutical", "TITAN.NS": "Titan Company",
+    "WIPRO.NS": "Wipro", "ULTRACEMCO.NS": "UltraTech Cement",
+    "NTPC.NS": "NTPC", "POWERGRID.NS": "Power Grid Corporation of India",
+    "ONGC.NS": "Oil & Natural Gas Corporation", "COALINDIA.NS": "Coal India",
+    "TATAMOTORS.NS": "Tata Motors", "TATASTEEL.NS": "Tata Steel",
+    "JSWSTEEL.NS": "JSW Steel", "HINDALCO.NS": "Hindalco Industries",
+    "ADANIPORTS.NS": "Adani Ports & SEZ", "BAJAJFINSV.NS": "Bajaj Finserv",
+    "NESTLEIND.NS": "Nestle India", "DRREDDY.NS": "Dr. Reddy's Laboratories",
+    "CIPLA.NS": "Cipla", "DIVISLAB.NS": "Divi's Laboratories",
+    "APOLLOHOSP.NS": "Apollo Hospitals", "EICHERMOT.NS": "Eicher Motors",
+    "HEROMOTOCO.NS": "Hero MotoCorp", "M&M.NS": "Mahindra & Mahindra",
+    "TATACONSUM.NS": "Tata Consumer Products", "BRITANNIA.NS": "Britannia Industries",
+    "INDUSINDBK.NS": "IndusInd Bank", "GRASIM.NS": "Grasim Industries",
+    "TECHM.NS": "Tech Mahindra", "BPCL.NS": "Bharat Petroleum",
+    "ADANIENT.NS": "Adani Enterprises", "SBILIFE.NS": "SBI Life Insurance",
+    "HDFCLIFE.NS": "HDFC Life Insurance", "SHRIRAMFIN.NS": "Shriram Finance",
+    "LTIM.NS": "LTIMindtree", "BEL.NS": "Bharat Electronics",
+    "DMART.NS": "Avenue Supermarts (DMart)", "ZOMATO.NS": "Eternal (Zomato)",
+    "NYKAA.NS": "FSN E-Commerce Ventures (Nykaa)", "PAYTM.NS": "One97 Communications (Paytm)",
+    "POLICYBZR.NS": "PB Fintech (Policybazaar)", "PERSISTENT.NS": "Persistent Systems",
+    "MPHASIS.NS": "Mphasis", "COFORGE.NS": "Coforge",
+    "OFSS.NS": "Oracle Financial Services Software", "LTTS.NS": "L&T Technology Services",
+    "HAVELLS.NS": "Havells India", "POLYCAB.NS": "Polycab India",
+    "TRENT.NS": "Trent", "IRCTC.NS": "Indian Railway Catering & Tourism (IRCTC)",
+    "ATGL.NS": "Adani Total Gas", "CHOLAFIN.NS": "Cholamandalam Investment & Finance",
+    "MUTHOOTFIN.NS": "Muthoot Finance", "BAJAJ-AUTO.NS": "Bajaj Auto",
+    "GODREJCP.NS": "Godrej Consumer Products", "MARICO.NS": "Marico",
+    "DABUR.NS": "Dabur India", "COLPAL.NS": "Colgate-Palmolive India",
+    "PIDILITIND.NS": "Pidilite Industries", "BERGEPAINT.NS": "Berger Paints",
+    "SIEMENS.NS": "Siemens India", "ABB.NS": "ABB India",
+    "BANKBARODA.NS": "Bank of Baroda", "PNB.NS": "Punjab National Bank",
+    "CANARABANK.NS": "Canara Bank", "IDFCFIRSTB.NS": "IDFC First Bank",
+    "FEDERALBNK.NS": "Federal Bank", "SAIL.NS": "Steel Authority of India",
+    "NMDC.NS": "NMDC", "VEDL.NS": "Vedanta",
+    "GAIL.NS": "GAIL India", "IOC.NS": "Indian Oil Corporation",
+    "TATAPOWER.NS": "Tata Power", "ADANIGREEN.NS": "Adani Green Energy",
+    "TORNTPHARM.NS": "Torrent Pharmaceuticals", "LUPIN.NS": "Lupin",
+    "AUROPHARMA.NS": "Aurobindo Pharma", "ALKEM.NS": "Alkem Laboratories",
+    "LICI.NS": "Life Insurance Corporation of India (LIC)", "PFC.NS": "Power Finance Corporation",
+    "RECLTD.NS": "REC Limited", "NAUKRI.NS": "Info Edge (Naukri.com)",
+    "PAGEIND.NS": "Page Industries", "VBL.NS": "Varun Beverages",
+    "CONCOR.NS": "Container Corporation of India", "PIIND.NS": "PI Industries",
+}
 
 # ── US fallback list (used if Wikipedia is unreachable) ──────────────────────
 _US_FALLBACK = [
@@ -55,18 +110,30 @@ _US_FALLBACK = [
 
 
 @st.cache_data(ttl=86400, show_spinner=False)
-def fetch_sp500_tickers() -> list:
-    """Fetch live S&P 500 constituent tickers from Wikipedia. Cached 24 hours."""
+def _fetch_sp500_table() -> list:
+    """Fetch live S&P 500 constituents (ticker + company name) from Wikipedia. Cached 24 hours."""
     try:
         tables = pd.read_html(
             "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies",
             attrs={"id": "constituents"},
+            # Without a browser-like User-Agent, Wikipedia returns HTTP 403 for
+            # pandas' default request (looks like a bot), which was silently
+            # dropping us to the ticker-only fallback list below.
+            storage_options={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"},
         )
-        tickers = [t.replace(".", "-") for t in tables[0]["Symbol"].tolist()]
-        return tickers
+        df = tables[0]
+        return [
+            {"ticker": str(sym).replace(".", "-"), "name": str(name)}
+            for sym, name in zip(df["Symbol"], df["Security"])
+        ]
     except Exception as e:
         print(f"S&P 500 Wikipedia fetch error: {e}")
-        return _US_FALLBACK
+        return [{"ticker": t, "name": t} for t in _US_FALLBACK]
+
+
+def fetch_sp500_tickers() -> list:
+    """Returns just the S&P 500 ticker symbols."""
+    return [row["ticker"] for row in _fetch_sp500_table()]
 
 
 def get_all_tickers(include_us: bool = True, include_india: bool = True) -> list:
@@ -77,6 +144,48 @@ def get_all_tickers(include_us: bool = True, include_india: bool = True) -> list
     if include_india:
         result.extend(INDIAN_TICKERS)
     return list(dict.fromkeys(result))
+
+
+def get_company_directory() -> list:
+    """Returns [{ticker, name}] for every US (S&P 500) + Indian (Nifty 100) company —
+    powers the "search by company name" autocomplete so users don't need to already
+    know a ticker symbol."""
+    directory = list(_fetch_sp500_table())
+    seen = {row["ticker"] for row in directory}
+    for ticker in INDIAN_TICKERS:
+        if ticker not in seen:
+            directory.append({"ticker": ticker, "name": INDIAN_TICKER_NAMES.get(ticker, ticker)})
+            seen.add(ticker)
+    return sorted(directory, key=lambda r: r["name"].lower())
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def get_usd_inr_rate() -> float:
+    """Live USD→INR rate, so the Screener's Market Cap filter can compare US
+    and Indian stocks on one scale instead of mixing currencies. Cached 1 hour;
+    falls back to a fixed approximate rate if the quote is unavailable."""
+    try:
+        hist = yf.Ticker("INR=X").history(period="1d")
+        if not hist.empty:
+            rate = float(hist["Close"].iloc[-1])
+            if rate > 0:
+                return rate
+    except Exception as e:
+        print(f"USD/INR rate fetch error: {e}")
+    return 88.0
+
+
+def convert_market_cap(native_cap, stock_currency, display_currency, fx_rate):
+    """Converts a raw market cap into the chosen display currency (USD or INR)
+    so it can be compared/filtered on one consistent scale."""
+    if native_cap is None:
+        return None
+    is_inr_stock = (stock_currency or "USD").upper() == "INR"
+    if display_currency == "INR" and not is_inr_stock:
+        return native_cap * fx_rate
+    if display_currency == "USD" and is_inr_stock:
+        return native_cap / fx_rate
+    return native_cap
 
 
 @st.cache_data(ttl=900, show_spinner=False)
